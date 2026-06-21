@@ -50,20 +50,41 @@ def send_message(phone, text):
 
 def send_daily_reminders():
     now = datetime.now(IST)
-    current_hour = now.hour
-    current_minute = now.minute
     day_of_week = now.weekday()
     workout = WORKOUT_SCHEDULE[day_of_week]
     for phone, reminder in list(user_reminders.items()):
-        if reminder["hour"] == current_hour and reminder["minute"] == current_minute:
+        if reminder["hour"] == now.hour and reminder["minute"] == now.minute:
             if day_of_week == 6:
-                msg = "🌟 Good morning! Today is your *Rest Day* — let your muscles recover and grow! Stay hydrated! 💧"
+                msg = "🌟 Good morning! Today is your *Rest Day* — recover and stay hydrated! 💧"
             else:
                 msg = f"🔔 *GymBot Reminder!*\n\nGood morning! Time for your workout!\n\nToday: *{workout}*\n\nSend *1* for today's workout plan!\nSend *0* for main menu\n\nLet's crush it today! 💪🔥"
             send_message(phone, msg)
 
 def get_main_menu():
-    return "Welcome to GymBot! 🏋️\n\nI am your personal AI fitness assistant.\n\nReply with a number:\n\n1 - Workout Plans\n2 - Diet and Nutrition\n3 - BMI Calculator\n4 - Weekly Schedule\n5 - Membership Info\n6 - Exercise Tips\n7 - Set Workout Reminder 🔔\n8 - Cancel Reminder ❌\n0 - Main Menu (anytime)\n\nOr just TYPE any fitness question!"
+    return (
+        "Welcome to GymBot! 🏋️\n\n"
+        "I am your personal AI fitness assistant.\n\n"
+        "Reply with a number:\n\n"
+        "1 - Workout Plans\n"
+        "2 - Diet and Nutrition\n"
+        "3 - BMI Calculator\n"
+        "4 - Weekly Schedule\n"
+        "5 - Membership Info\n"
+        "6 - Exercise Tips\n"
+        "7 - Supplement Guide\n"
+        "8 - Motivational Quote\n"
+        "9 - 30 Day Challenge\n"
+        "10 - Calorie Calculator\n"
+        "11 - Water Intake Calculator\n"
+        "12 - Body Fat Calculator\n"
+        "13 - Cardio Guide\n"
+        "14 - Recovery and Sleep Tips\n"
+        "15 - Ask AI (Any Fitness Question)\n"
+        "16 - Set Workout Reminder 🔔\n"
+        "17 - Cancel Reminder ❌\n"
+        "0 - Main Menu (anytime)\n\n"
+        "Or just TYPE any fitness question!"
+    )
 
 def get_workout_menu():
     return "Workout Plans\n\nChoose your target:\n\n1 - Chest and Triceps\n2 - Back and Biceps\n3 - Legs and Glutes\n4 - Shoulders and Arms\n5 - Core and Abs\n6 - Full Body\n0 - Back to Main Menu"
@@ -96,8 +117,21 @@ def get_diet(choice):
 def get_weekly_schedule():
     return "Weekly Gym Schedule\n\nMonday - Chest and Triceps\nTuesday - Back and Biceps\nWednesday - Legs and Glutes\nThursday - Shoulders and Arms\nFriday - Core and Abs\nSaturday - Cardio / Full Body\nSunday - Rest and Recovery\n\nConsistency beats Intensity!"
 
+def get_supplement_guide():
+    return "Supplement Guide 💊\n\nBeginner Essentials:\n- Whey Protein: 1-2 scoops post workout\n- Creatine: 5g daily (any time)\n- Multivitamin: 1 daily with food\n\nIntermediate:\n- Pre-workout: 30 min before gym\n- BCAA: During workout\n- Fish Oil: 1g daily\n\nAdvanced:\n- Casein Protein: Before bed\n- Glutamine: Post workout\n\n⚠️ Food first, supplements second!\nSend 0 for Main Menu"
+
+def get_30_day_challenge():
+    return "30 Day Fitness Challenge 🔥\n\nWeek 1 - Foundation:\n- 20 push-ups daily\n- 30 squats daily\n- 1 min plank daily\n\nWeek 2 - Build:\n- 30 push-ups daily\n- 40 squats daily\n- 2 min plank daily\n\nWeek 3 - Intensity:\n- 40 push-ups daily\n- 50 squats daily\n- 3 min plank daily\n\nWeek 4 - Beast Mode:\n- 50 push-ups daily\n- 60 squats daily\n- 4 min plank daily\n\nNo excuses — consistency is key! 💪\nSend 0 for Main Menu"
+
+def get_cardio_guide():
+    return "Cardio Guide 🏃\n\nFor Weight Loss:\n- 30-45 min moderate cardio\n- 5 days per week\n- Heart rate: 60-70% max\n\nFor Endurance:\n- Long slow runs 45-60 min\n- 3-4 days per week\n\nHIIT (Best for fat burn):\n- 20 sec sprint + 40 sec rest\n- Repeat 10-15 times\n- Only 20 mins needed!\n\nBest Cardio Options:\nRunning, Cycling, Swimming, Jump rope\n\nDo cardio AFTER weights!\nSend 0 for Main Menu"
+
+def get_recovery_tips():
+    return "Recovery and Sleep Tips 😴\n\nSleep:\n- 7-9 hours every night\n- Sleep at same time daily\n- No phone 30 min before bed\n\nRecovery:\n- Stretch 10 min after workout\n- Foam roll sore muscles\n- Ice pack for injuries\n- Active rest on off days (walk)\n\nNutrition for Recovery:\n- Eat protein within 30 min\n- Stay hydrated\n- Avoid alcohol\n\nRemember: Muscles grow during REST!\nSend 0 for Main Menu"
+
 def handle_message(phone, message):
-    msg = message.strip().lower()
+    msg = message.strip()
+    msg_lower = msg.lower()
     session = user_sessions.get(phone, {"state": "main"})
 
     if msg == "0":
@@ -105,7 +139,7 @@ def handle_message(phone, message):
         send_message(phone, get_main_menu())
         return
 
-    if "stop reminder" in msg or "cancel reminder" in msg or msg == "8":
+    if "stop reminder" in msg_lower or "cancel reminder" in msg_lower or msg == "17":
         if phone in user_reminders:
             del user_reminders[phone]
             send_message(phone, "✅ Reminder cancelled!\n\nSend 0 for Main Menu")
@@ -128,14 +162,36 @@ def handle_message(phone, message):
         elif msg == "4":
             send_message(phone, get_weekly_schedule())
         elif msg == "5":
-            send_message(phone, "Membership Info\n\nBasic Plan: Rs 800/month\nStandard Plan: Rs 1200/month\nPremium Plan: Rs 2000/month\n\nContact us to join!")
+            send_message(phone, "Membership Info\n\nBasic Plan: Rs 800/month\nStandard Plan: Rs 1200/month\nPremium Plan: Rs 2000/month\n\nContact us to join!\nSend 0 for Main Menu")
         elif msg == "6":
             send_message(phone, ask_ai("Give me 5 important exercise tips for beginners"))
         elif msg == "7":
+            send_message(phone, get_supplement_guide())
+        elif msg == "8":
+            send_message(phone, ask_ai("Give me a powerful motivational quote for gym and fitness"))
+        elif msg == "9":
+            send_message(phone, get_30_day_challenge())
+        elif msg == "10":
+            user_sessions[phone] = {"state": "calorie_gender"}
+            send_message(phone, "Calorie Calculator\n\nEnter your gender:\n1 - Male\n2 - Female")
+        elif msg == "11":
+            user_sessions[phone] = {"state": "water_weight"}
+            send_message(phone, "Water Intake Calculator\n\nEnter your weight in kg (e.g. 70):")
+        elif msg == "12":
+            user_sessions[phone] = {"state": "bodyfat_gender"}
+            send_message(phone, "Body Fat Calculator\n\nEnter your gender:\n1 - Male\n2 - Female")
+        elif msg == "13":
+            send_message(phone, get_cardio_guide())
+        elif msg == "14":
+            send_message(phone, get_recovery_tips())
+        elif msg == "15":
+            user_sessions[phone] = {"state": "ask_ai"}
+            send_message(phone, "🤖 Ask AI Mode\n\nType any fitness question!\n\nSend 0 to go back to Main Menu")
+        elif msg == "16":
             user_sessions[phone] = {"state": "set_reminder"}
-            send_message(phone, "🔔 Set Workout Reminder\n\nWhat time should I remind you daily?\n\nEnter hour in 24hr format (IST)\nExamples:\n- 6 = 6:00 AM\n- 7 = 7:00 AM\n- 18 = 6:00 PM")
+            send_message(phone, "🔔 Set Workout Reminder\n\nEnter hour in 24hr format (IST)\nExamples:\n- 6 = 6:00 AM\n- 7 = 7:00 AM\n- 18 = 6:00 PM")
         else:
-            send_message(phone, ask_ai(message))
+            send_message(phone, ask_ai(msg))
 
     elif state == "workout":
         workout = get_workout(msg)
@@ -159,7 +215,7 @@ def handle_message(phone, message):
             user_sessions[phone] = {"state": "bmi_height", "weight": weight}
             send_message(phone, "Now enter your height in cm (e.g. 175):")
         except:
-            send_message(phone, "Please enter a valid number (e.g. 70):")
+            send_message(phone, "Please enter a valid weight (e.g. 70):")
 
     elif state == "bmi_height":
         try:
@@ -171,9 +227,120 @@ def handle_message(phone, message):
             elif bmi < 30: category = "Overweight"
             else: category = "Obese"
             user_sessions[phone] = {"state": "main"}
-            send_message(phone, f"Your BMI: {bmi}\nCategory: {category}\n\nReply 0 for Main Menu")
+            send_message(phone, f"Your BMI: {bmi}\nCategory: {category}\n\nSend 0 for Main Menu")
         except:
-            send_message(phone, "Please enter a valid height in cm (e.g. 175):")
+            send_message(phone, "Please enter a valid height (e.g. 175):")
+
+    elif state == "calorie_gender":
+        if msg == "1":
+            user_sessions[phone] = {"state": "calorie_weight", "gender": "male"}
+            send_message(phone, "Enter your weight in kg:")
+        elif msg == "2":
+            user_sessions[phone] = {"state": "calorie_weight", "gender": "female"}
+            send_message(phone, "Enter your weight in kg:")
+        else:
+            send_message(phone, "Enter 1 for Male or 2 for Female:")
+
+    elif state == "calorie_weight":
+        try:
+            weight = float(msg)
+            user_sessions[phone] = {**session, "state": "calorie_height", "weight": weight}
+            send_message(phone, "Enter your height in cm:")
+        except:
+            send_message(phone, "Please enter a valid weight (e.g. 70):")
+
+    elif state == "calorie_height":
+        try:
+            height = float(msg)
+            user_sessions[phone] = {**session, "state": "calorie_age", "height": height}
+            send_message(phone, "Enter your age:")
+        except:
+            send_message(phone, "Please enter a valid height (e.g. 175):")
+
+    elif state == "calorie_age":
+        try:
+            age = int(msg)
+            weight = session.get("weight", 70)
+            height = session.get("height", 170)
+            gender = session.get("gender", "male")
+            if gender == "male":
+                bmr = 10 * weight + 6.25 * height - 5 * age + 5
+            else:
+                bmr = 10 * weight + 6.25 * height - 5 * age - 161
+            maintain = round(bmr * 1.55)
+            lose = round(maintain - 500)
+            gain = round(maintain + 500)
+            user_sessions[phone] = {"state": "main"}
+            send_message(phone, f"Calorie Results 🔥\n\nMaintain: {maintain} kcal/day\nLose weight: {lose} kcal/day\nGain muscle: {gain} kcal/day\n\nSend 0 for Main Menu")
+        except:
+            send_message(phone, "Please enter a valid age (e.g. 25):")
+
+    elif state == "water_weight":
+        try:
+            weight = float(msg)
+            water = round(weight * 0.033, 1)
+            workout_water = round(water + 0.5, 1)
+            user_sessions[phone] = {"state": "main"}
+            send_message(phone, f"Water Intake 💧\n\nNormal day: {water} litres\nWorkout day: {workout_water} litres\n\nTip: Drink 500ml right after waking up!\nSend 0 for Main Menu")
+        except:
+            send_message(phone, "Please enter a valid weight (e.g. 70):")
+
+    elif state == "bodyfat_gender":
+        if msg == "1":
+            user_sessions[phone] = {"state": "bodyfat_weight", "gender": "male"}
+            send_message(phone, "Enter your weight in kg:")
+        elif msg == "2":
+            user_sessions[phone] = {"state": "bodyfat_weight", "gender": "female"}
+            send_message(phone, "Enter your weight in kg:")
+        else:
+            send_message(phone, "Enter 1 for Male or 2 for Female:")
+
+    elif state == "bodyfat_weight":
+        try:
+            weight = float(msg)
+            user_sessions[phone] = {**session, "state": "bodyfat_height", "weight": weight}
+            send_message(phone, "Enter your height in cm:")
+        except:
+            send_message(phone, "Please enter a valid weight (e.g. 70):")
+
+    elif state == "bodyfat_height":
+        try:
+            height = float(msg)
+            user_sessions[phone] = {**session, "state": "bodyfat_age", "height": height}
+            send_message(phone, "Enter your age:")
+        except:
+            send_message(phone, "Please enter a valid height (e.g. 175):")
+
+    elif state == "bodyfat_age":
+        try:
+            age = int(msg)
+            weight = session.get("weight", 70)
+            height = session.get("height", 170)
+            gender = session.get("gender", "male")
+            bmi = weight / ((height / 100) ** 2)
+            if gender == "male":
+                body_fat = round(1.20 * bmi + 0.23 * age - 16.2, 1)
+            else:
+                body_fat = round(1.20 * bmi + 0.23 * age - 5.4, 1)
+            if gender == "male":
+                if body_fat < 6: category = "Essential Fat"
+                elif body_fat < 14: category = "Athlete"
+                elif body_fat < 18: category = "Fitness"
+                elif body_fat < 25: category = "Average"
+                else: category = "Obese"
+            else:
+                if body_fat < 14: category = "Essential Fat"
+                elif body_fat < 21: category = "Athlete"
+                elif body_fat < 25: category = "Fitness"
+                elif body_fat < 32: category = "Average"
+                else: category = "Obese"
+            user_sessions[phone] = {"state": "main"}
+            send_message(phone, f"Body Fat Results 📊\n\nEstimated Body Fat: {body_fat}%\nCategory: {category}\n\nSend 0 for Main Menu")
+        except:
+            send_message(phone, "Please enter a valid age (e.g. 25):")
+
+    elif state == "ask_ai":
+        send_message(phone, ask_ai(msg))
 
     elif state == "set_reminder":
         try:
@@ -187,7 +354,7 @@ def handle_message(phone, message):
             else:
                 send_message(phone, "Enter a valid hour (0-23):")
         except:
-            send_message(phone, "Please enter a number (e.g. 7 for 7 AM):")
+            send_message(phone, "Enter a number (e.g. 7 for 7 AM, 18 for 6 PM):")
 
 @app.route('/webhook', methods=['GET'])
 def verify():
