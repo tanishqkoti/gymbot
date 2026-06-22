@@ -15,6 +15,7 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 IST = pytz.timezone("Asia/Kolkata")
 user_sessions = {}
 user_reminders = {}
+reminder_sent_today = {}  # ✅ FIX: Track if reminder was sent today
 
 WORKOUT_SCHEDULE = {
     0: "Chest and Triceps 💪",
@@ -51,14 +52,30 @@ def send_message(phone, text):
 def send_daily_reminders():
     now = datetime.now(IST)
     day_of_week = now.weekday()
+    today = now.date()  # ✅ FIX: Get today's date
     workout = WORKOUT_SCHEDULE[day_of_week]
+
     for phone, reminder in list(user_reminders.items()):
-        if reminder["hour"] == now.hour and reminder["minute"] == now.minute:
+        # ✅ FIX: 5-minute window instead of exact minute match
+        if reminder["hour"] == now.hour and now.minute < 5:
+            # ✅ FIX: Skip if already sent today
+            last_sent = reminder_sent_today.get(phone)
+            if last_sent == today:
+                continue
+
             if day_of_week == 6:
-                msg = "🌟 Good morning! Today is your *Rest Day* — recover and stay hydrated! 💧"
+                msg = "🌟 Good morning! Today is your *Rest Day* — recover and stay hydrated! 💧\n\nSend 0 for Main Menu"
             else:
-                msg = f"🔔 *GymBot Reminder!*\n\nGood morning! Time for your workout!\n\nToday: *{workout}*\n\nSend *1* for today's workout plan!\nSend *0* for main menu\n\nLet's crush it today! 💪🔥"
+                msg = (
+                    f"🔔 *GymBot Reminder!*\n\n"
+                    f"Good morning! Time for your workout!\n\n"
+                    f"Today: *{workout}*\n\n"
+                    f"Send *1* for today's workout plan!\n"
+                    f"Send *0* for main menu\n\n"
+                    f"Let's crush it today! 💪🔥"
+                )
             send_message(phone, msg)
+            reminder_sent_today[phone] = today  # ✅ FIX: Mark as sent
 
 def get_main_menu():
     return (
@@ -142,6 +159,8 @@ def handle_message(phone, message):
     if "stop reminder" in msg_lower or "cancel reminder" in msg_lower or msg == "17":
         if phone in user_reminders:
             del user_reminders[phone]
+            if phone in reminder_sent_today:
+                del reminder_sent_today[phone]
             send_message(phone, "✅ Reminder cancelled!\n\nSend 0 for Main Menu")
         else:
             send_message(phone, "You have no active reminder.\n\nSend 0 for Main Menu")
@@ -347,6 +366,9 @@ def handle_message(phone, message):
             hour = int(msg)
             if 0 <= hour <= 23:
                 user_reminders[phone] = {"hour": hour, "minute": 0}
+                # ✅ FIX: Reset sent tracker when new reminder is set
+                if phone in reminder_sent_today:
+                    del reminder_sent_today[phone]
                 user_sessions[phone] = {"state": "main"}
                 period = "AM" if hour < 12 else "PM"
                 display_hour = hour % 12 or 12
