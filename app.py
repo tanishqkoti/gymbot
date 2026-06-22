@@ -38,7 +38,12 @@ def ask_ai(question):
             ]
         }
         response = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=data)
-        return response.json()["choices"][0]["message"]["content"].strip()
+        result = response.json()
+        if "choices" in result:
+            return result["choices"][0]["message"]["content"].strip()
+        else:
+            print("Groq Error:", result)
+            return "AI is temporarily unavailable. Try again in a moment! 💪\n\nSend 0 for Main Menu"
     except Exception as e:
         print("AI Error: " + str(e))
         return "Sorry, I could not process that right now. Send 0 for the main menu."
