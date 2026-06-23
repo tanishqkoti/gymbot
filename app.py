@@ -17,6 +17,7 @@ IST = pytz.timezone("Asia/Kolkata")
 user_sessions = {}
 reminder_sent_today = {}
 motivation_sent_today = {}
+weekly_report_sent = {}
 REMINDERS_FILE = "reminders.json"
 PROGRESS_FILE = "progress.json"
 
@@ -147,6 +148,65 @@ def get_progress_message(phone, new_weight):
 
     msg += "\n\nSend *19* anytime to log your weight!\nSend *0* for Main Menu"
     return msg
+
+def send_weekly_progress_report():
+    now = datetime.now(IST)
+
+    # Only runs on Sunday at 9 AM IST
+    if now.weekday() != 6 or now.hour != 9:
+        return
+
+    today_str = str(now.date())
+    all_users = set(list(user_reminders.keys()) + list(user_sessions.keys()) + list(user_progress.keys()))
+
+    for phone in all_users:
+        if weekly_report_sent.get(phone) == today_str:
+            continue
+
+        entries = user_progress.get(phone, [])
+
+        if len(entries) >= 2:
+            latest = entries[-1]
+            previous = entries[-2]
+            diff = round(latest["weight"] - previous["weight"], 1)
+
+            if diff < 0:
+                change_msg = f"🎉 You lost *{abs(diff)} kg* this week! Keep it up!"
+            elif diff > 0:
+                change_msg = f"📈 You gained *{diff} kg* this week! Bulking nicely!"
+            else:
+                change_msg = "⚖️ Weight maintained this week! Consistency is key!"
+
+            msg = (
+                f"📈 *Weekly Progress Report!*\n\n"
+                f"Happy Sunday! Here's your week summary:\n\n"
+                f"Last logged: {previous['date']} → {previous['weight']} kg\n"
+                f"This week: {latest['date']} → {latest['weight']} kg\n\n"
+                f"{change_msg}\n\n"
+                f"Overall journey: *{entries[0]['weight']} kg → {latest['weight']} kg*\n\n"
+                f"Send *19* to log today's weight!\n"
+                f"Send *0* for Main Menu 💪"
+            )
+        elif len(entries) == 1:
+            msg = (
+                f"📈 *Weekly Progress Report!*\n\n"
+                f"Happy Sunday! 🌟\n\n"
+                f"You have 1 weight entry so far: *{entries[0]['weight']} kg*\n\n"
+                f"Log your weight every week to track your progress!\n\n"
+                f"Send *19* to log today's weight!\n"
+                f"Send *0* for Main Menu 💪"
+            )
+        else:
+            msg = (
+                f"📈 *Weekly Progress Report!*\n\n"
+                f"Happy Sunday! 🌟\n\n"
+                f"You haven't logged your weight yet!\n\n"
+                f"Start tracking today — send *19* to log your first weight entry!\n\n"
+                f"Send *0* for Main Menu 💪"
+            )
+
+        send_message(phone, msg)
+        weekly_report_sent[phone] = today_str
 
 def send_daily_reminders():
     now = datetime.now(IST)
@@ -542,6 +602,7 @@ def home():
 scheduler = BackgroundScheduler(timezone=IST)
 scheduler.add_job(send_daily_reminders, 'cron', minute='*')
 scheduler.add_job(send_morning_motivation, 'cron', minute='*')
+scheduler.add_job(send_weekly_progress_report, 'cron', minute='*')
 scheduler.start()
 
 if __name__ == '__main__':
