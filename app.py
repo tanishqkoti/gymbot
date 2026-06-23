@@ -16,6 +16,7 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 IST = pytz.timezone("Asia/Kolkata")
 user_sessions = {}
 reminder_sent_today = {}
+motivation_sent_today = {}
 REMINDERS_FILE = "reminders.json"
 
 WORKOUT_SCHEDULE = {
@@ -98,6 +99,24 @@ def send_daily_reminders():
                 )
             send_message(phone, msg)
             reminder_sent_today[phone] = today
+
+def send_morning_motivation():
+    now = datetime.now(IST)
+    today = str(now.date())
+
+    if now.hour != 8:
+        return
+
+    quote = ask_ai("Give me one powerful unique gym and fitness motivational quote for today. Keep it under 3 lines. Do not add Send 0 for Main Menu at the end.")
+    msg = f"🌅 *Good Morning!*\n\n{quote}\n\n💪 Let's crush today's workout!\nSend *0* for Main Menu"
+
+    all_users = set(list(user_reminders.keys()) + list(user_sessions.keys()))
+
+    for phone in all_users:
+        if motivation_sent_today.get(phone) == today:
+            continue
+        send_message(phone, msg)
+        motivation_sent_today[phone] = today
 
 def get_main_menu():
     return (
@@ -430,6 +449,7 @@ def home():
 
 scheduler = BackgroundScheduler(timezone=IST)
 scheduler.add_job(send_daily_reminders, 'cron', minute='*')
+scheduler.add_job(send_morning_motivation, 'cron', minute='*')
 scheduler.start()
 
 if __name__ == '__main__':
