@@ -69,6 +69,27 @@ def ask_ai(question):
         print("AI Error: " + str(e))
         return "Sorry, I could not process that right now. Send 0 for the main menu."
 
+def ask_ai_calories(food):
+    try:
+        headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
+        data = {
+            "model": "llama-3.3-70b-versatile",
+            "messages": [
+                {"role": "system", "content": "You are a nutrition expert. When given food items, calculate and list the calories for each item and give a total. Format your response clearly with each food item on a new line with its calories, then a total at the end. Keep it short and precise. Use this format:\n🍽️ Calorie Count:\n• [food item] = [calories] kcal\n• [food item] = [calories] kcal\n\n🔥 Total = [total] kcal\n\n[one short fitness tip related to the food]"},
+                {"role": "user", "content": f"Calculate calories for: {food}"}
+            ]
+        }
+        response = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=data, timeout=10)
+        result = response.json()
+        if "choices" in result:
+            return result["choices"][0]["message"]["content"].strip() + "\n\n_Send 18 for more calorie checks_\n_Send 0 for Main Menu_ 💪"
+        else:
+            print("Groq Error:", result)
+            return "Could not calculate calories right now. Try again! 💪\n\nSend 0 for Main Menu"
+    except Exception as e:
+        print("Calorie AI Error: " + str(e))
+        return "Sorry, could not process that. Send 0 for the main menu."
+
 def send_message(phone, text):
     url = f"https://graph.facebook.com/v18.0/{PHONE_NUMBER_ID}/messages"
     headers = {"Authorization": f"Bearer {WHATSAPP_TOKEN}", "Content-Type": "application/json"}
@@ -80,7 +101,6 @@ def send_daily_reminders():
     day_of_week = now.weekday()
     today = str(now.date())
     workout = WORKOUT_SCHEDULE[day_of_week]
-
     for phone, reminder in list(user_reminders.items()):
         if reminder["hour"] == now.hour and now.minute < 5:
             last_sent = reminder_sent_today.get(phone)
@@ -103,15 +123,11 @@ def send_daily_reminders():
 def send_morning_motivation():
     now = datetime.now(IST)
     today = str(now.date())
-
     if now.hour != 8:
         return
-
     quote = ask_ai("Give me one powerful unique gym and fitness motivational quote for today. Keep it under 3 lines. Do not add Send 0 for Main Menu at the end.")
     msg = f"🌅 *Good Morning!*\n\n{quote}\n\n💪 Let's crush today's workout!\nSend *0* for Main Menu"
-
     all_users = set(list(user_reminders.keys()) + list(user_sessions.keys()))
-
     for phone in all_users:
         if motivation_sent_today.get(phone) == today:
             continue
@@ -140,6 +156,7 @@ def get_main_menu():
         "15 - Ask AI (Any Fitness Question)\n"
         "16 - Set Workout Reminder 🔔\n"
         "17 - Cancel Reminder ❌\n"
+        "18 - 🍽️ Calorie Counter\n"
         "0 - Main Menu (anytime)\n\n"
         "Or just TYPE any fitness question!"
     )
@@ -251,6 +268,9 @@ def handle_message(phone, message):
         elif msg == "16":
             user_sessions[phone] = {"state": "set_reminder"}
             send_message(phone, "🔔 Set Workout Reminder\n\nEnter hour in 24hr format (IST)\nExamples:\n- 6 = 6:00 AM\n- 7 = 7:00 AM\n- 18 = 6:00 PM")
+        elif msg == "18":
+            user_sessions[phone] = {"state": "calorie_counter"}
+            send_message(phone, "🍽️ *Calorie Counter*\n\nType any food or meal!\n\nExamples:\n- 2 eggs and oats\n- rice 1 cup and chicken\n- banana and peanut butter toast\n\nSend 0 to go back to Main Menu")
         else:
             send_message(phone, ask_ai(msg))
 
@@ -402,6 +422,9 @@ def handle_message(phone, message):
 
     elif state == "ask_ai":
         send_message(phone, ask_ai(msg))
+
+    elif state == "calorie_counter":
+        send_message(phone, ask_ai_calories(msg))
 
     elif state == "set_reminder":
         try:
