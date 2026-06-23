@@ -18,6 +18,7 @@ user_sessions = {}
 reminder_sent_today = {}
 motivation_sent_today = {}
 REMINDERS_FILE = "reminders.json"
+PROGRESS_FILE = "progress.json"
 
 WORKOUT_SCHEDULE = {
     0: "Chest and Triceps 💪",
@@ -45,7 +46,24 @@ def save_reminders(reminders):
     except Exception as e:
         print("Save Error:", e)
 
+def load_progress():
+    try:
+        if os.path.exists(PROGRESS_FILE):
+            with open(PROGRESS_FILE, "r") as f:
+                return json.load(f)
+    except:
+        pass
+    return {}
+
+def save_progress(progress):
+    try:
+        with open(PROGRESS_FILE, "w") as f:
+            json.dump(progress, f)
+    except Exception as e:
+        print("Progress Save Error:", e)
+
 user_reminders = load_reminders()
+user_progress = load_progress()
 
 def ask_ai(question):
     try:
@@ -60,10 +78,8 @@ def ask_ai(question):
         response = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=data, timeout=10)
         result = response.json()
         if "choices" in result:
-            ai_reply = result["choices"][0]["message"]["content"].strip()
-            return ai_reply + "\n\n_Send 0 for Main Menu_ 💪"
+            return result["choices"][0]["message"]["content"].strip() + "\n\n_Send 0 for Main Menu_ 💪"
         else:
-            print("Groq Error:", result)
             return "AI is temporarily unavailable. Try again in a moment! 💪\n\nSend 0 for Main Menu"
     except Exception as e:
         print("AI Error: " + str(e))
@@ -84,7 +100,6 @@ def ask_ai_calories(food):
         if "choices" in result:
             return result["choices"][0]["message"]["content"].strip() + "\n\n_Send 18 for more calorie checks_\n_Send 0 for Main Menu_ 💪"
         else:
-            print("Groq Error:", result)
             return "Could not calculate calories right now. Try again! 💪\n\nSend 0 for Main Menu"
     except Exception as e:
         print("Calorie AI Error: " + str(e))
@@ -95,6 +110,43 @@ def send_message(phone, text):
     headers = {"Authorization": f"Bearer {WHATSAPP_TOKEN}", "Content-Type": "application/json"}
     data = {"messaging_product": "whatsapp", "to": phone, "type": "text", "text": {"body": text}}
     requests.post(url, headers=headers, json=data)
+
+def get_progress_message(phone, new_weight):
+    now = datetime.now(IST)
+    today = now.strftime("%d %b %Y")
+
+    if phone not in user_progress:
+        user_progress[phone] = []
+
+    entries = user_progress[phone]
+    entries.append({"date": today, "weight": new_weight})
+    user_progress[phone] = entries
+    save_progress(user_progress)
+
+    msg = f"📊 *Progress Saved!*\n\nDate: {today}\nWeight: {new_weight} kg\n\n"
+
+    if len(entries) == 1:
+        msg += "This is your first entry! Keep logging every week to track your progress! 💪"
+    else:
+        msg += "*Your Journey:*\n"
+        show_entries = entries[-5:]
+        for entry in show_entries:
+            marker = "← Today" if entry == entries[-1] else ""
+            msg += f"• {entry['date']} → {entry['weight']} kg {marker}\n"
+
+        first_weight = entries[0]["weight"]
+        diff = round(new_weight - first_weight, 1)
+
+        msg += "\n"
+        if diff < 0:
+            msg += f"🎉 You lost *{abs(diff)} kg* since you started! Amazing progress!"
+        elif diff > 0:
+            msg += f"📈 You gained *{diff} kg* since you started! Bulking up nicely!"
+        else:
+            msg += "⚖️ Weight maintained since start! Stay consistent!"
+
+    msg += "\n\nSend *19* anytime to log your weight!\nSend *0* for Main Menu"
+    return msg
 
 def send_daily_reminders():
     now = datetime.now(IST)
@@ -156,7 +208,8 @@ def get_main_menu():
         "15 - Ask AI (Any Fitness Question)\n"
         "16 - Set Workout Reminder 🔔\n"
         "17 - Cancel Reminder ❌\n"
-        "18 - 🍽️ Calorie Counter\n"
+        "18 - Calorie Counter 🍽️\n"
+        "19 - Progress Tracker 📊\n"
         "0 - Main Menu (anytime)\n\n"
         "Or just TYPE any fitness question!"
     )
@@ -271,6 +324,14 @@ def handle_message(phone, message):
         elif msg == "18":
             user_sessions[phone] = {"state": "calorie_counter"}
             send_message(phone, "🍽️ *Calorie Counter*\n\nType any food or meal!\n\nExamples:\n- 2 eggs and oats\n- rice 1 cup and chicken\n- banana and peanut butter toast\n\nSend 0 to go back to Main Menu")
+        elif msg == "19":
+            user_sessions[phone] = {"state": "progress_weight"}
+            entries = user_progress.get(phone, [])
+            if entries:
+                last = entries[-1]
+                send_message(phone, f"📊 *Progress Tracker*\n\nLast logged: {last['date']} → {last['weight']} kg\n\nEnter your current weight in kg (e.g. 75.5):\n\nSend 0 to cancel")
+            else:
+                send_message(phone, "📊 *Progress Tracker*\n\nTrack your weight journey here!\n\nEnter your current weight in kg (e.g. 75.5):\n\nSend 0 to cancel")
         else:
             send_message(phone, ask_ai(msg))
 
@@ -425,6 +486,14 @@ def handle_message(phone, message):
 
     elif state == "calorie_counter":
         send_message(phone, ask_ai_calories(msg))
+
+    elif state == "progress_weight":
+        try:
+            weight = float(msg)
+            user_sessions[phone] = {"state": "main"}
+            send_message(phone, get_progress_message(phone, weight))
+        except:
+            send_message(phone, "Please enter a valid weight (e.g. 75.5):")
 
     elif state == "set_reminder":
         try:
