@@ -1,6 +1,7 @@
 from flask import Flask, request
 import requests
 import os
+import json
 import pytz
 from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -14,8 +15,8 @@ GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 IST = pytz.timezone("Asia/Kolkata")
 user_sessions = {}
-user_reminders = {}
-reminder_sent_today = {}  # ✅ FIX: Track if reminder was sent today
+reminder_sent_today = {}
+REMINDERS_FILE = "reminders.json"
 
 WORKOUT_SCHEDULE = {
     0: "Chest and Triceps 💪",
@@ -27,6 +28,24 @@ WORKOUT_SCHEDULE = {
     6: "Rest and Recovery 😴"
 }
 
+def load_reminders():
+    try:
+        if os.path.exists(REMINDERS_FILE):
+            with open(REMINDERS_FILE, "r") as f:
+                return json.load(f)
+    except:
+        pass
+    return {}
+
+def save_reminders(reminders):
+    try:
+        with open(REMINDERS_FILE, "w") as f:
+            json.dump(reminders, f)
+    except Exception as e:
+        print("Save Error:", e)
+
+user_reminders = load_reminders()
+
 def ask_ai(question):
     try:
         headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
@@ -37,7 +56,7 @@ def ask_ai(question):
                 {"role": "user", "content": question}
             ]
         }
-        response = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=data)
+        response = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=data, timeout=10)
         result = response.json()
         if "choices" in result:
             ai_reply = result["choices"][0]["message"]["content"].strip()
@@ -58,17 +77,14 @@ def send_message(phone, text):
 def send_daily_reminders():
     now = datetime.now(IST)
     day_of_week = now.weekday()
-    today = now.date()  # ✅ FIX: Get today's date
+    today = str(now.date())
     workout = WORKOUT_SCHEDULE[day_of_week]
 
     for phone, reminder in list(user_reminders.items()):
-        # ✅ FIX: 5-minute window instead of exact minute match
         if reminder["hour"] == now.hour and now.minute < 5:
-            # ✅ FIX: Skip if already sent today
             last_sent = reminder_sent_today.get(phone)
             if last_sent == today:
                 continue
-
             if day_of_week == 6:
                 msg = "🌟 Good morning! Today is your *Rest Day* — recover and stay hydrated! 💧\n\nSend 0 for Main Menu"
             else:
@@ -81,7 +97,7 @@ def send_daily_reminders():
                     f"Let's crush it today! 💪🔥"
                 )
             send_message(phone, msg)
-            reminder_sent_today[phone] = today  # ✅ FIX: Mark as sent
+            reminder_sent_today[phone] = today
 
 def get_main_menu():
     return (
@@ -165,6 +181,7 @@ def handle_message(phone, message):
     if "stop reminder" in msg_lower or "cancel reminder" in msg_lower or msg == "17":
         if phone in user_reminders:
             del user_reminders[phone]
+            save_reminders(user_reminders)
             if phone in reminder_sent_today:
                 del reminder_sent_today[phone]
             send_message(phone, "✅ Reminder cancelled!\n\nSend 0 for Main Menu")
@@ -372,7 +389,7 @@ def handle_message(phone, message):
             hour = int(msg)
             if 0 <= hour <= 23:
                 user_reminders[phone] = {"hour": hour, "minute": 0}
-                # ✅ FIX: Reset sent tracker when new reminder is set
+                save_reminders(user_reminders)
                 if phone in reminder_sent_today:
                     del reminder_sent_today[phone]
                 user_sessions[phone] = {"state": "main"}
