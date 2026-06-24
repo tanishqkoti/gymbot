@@ -3,6 +3,7 @@ import requests
 import os
 import json
 import pytz
+import threading
 from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -65,6 +66,17 @@ def save_progress(progress):
 
 user_reminders = load_reminders()
 user_progress = load_progress()
+
+def keep_alive():
+    while True:
+        try:
+            url = os.getenv("RENDER_EXTERNAL_URL", "https://gymbot-2cr9.onrender.com")
+            requests.get(url + "/", timeout=10)
+            print("Keep alive ping sent!")
+        except Exception as e:
+            print("Keep alive error:", e)
+        import time
+        time.sleep(600)
 
 def ask_ai(question):
     try:
@@ -151,8 +163,6 @@ def get_progress_message(phone, new_weight):
 
 def send_weekly_progress_report():
     now = datetime.now(IST)
-
-    # Only runs on Sunday at 9 AM IST
     if now.weekday() != 6 or now.hour != 9:
         return
 
@@ -604,6 +614,9 @@ scheduler.add_job(send_daily_reminders, 'cron', minute='*')
 scheduler.add_job(send_morning_motivation, 'cron', minute='*')
 scheduler.add_job(send_weekly_progress_report, 'cron', minute='*')
 scheduler.start()
+
+# Keep Render alive — pings itself every 10 minutes
+threading.Thread(target=keep_alive, daemon=True).start()
 
 if __name__ == '__main__':
     port = int(os.getenv("PORT", 5000))
