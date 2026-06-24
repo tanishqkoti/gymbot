@@ -1,9 +1,9 @@
 from flask import Flask, request
 import requests
 import os
-import json
 import pytz
 import threading
+import sqlite3
 from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -19,8 +19,8 @@ user_sessions = {}
 reminder_sent_today = {}
 motivation_sent_today = {}
 weekly_report_sent = {}
-REMINDERS_FILE = "reminders.json"
-PROGRESS_FILE = "progress.json"
+
+DB_FILE = "gymbot.db"
 
 WORKOUT_SCHEDULE = {
     0: "Chest and Triceps 💪",
@@ -32,40 +32,112 @@ WORKOUT_SCHEDULE = {
     6: "Rest and Recovery 😴"
 }
 
-def load_reminders():
-    try:
-        if os.path.exists(REMINDERS_FILE):
-            with open(REMINDERS_FILE, "r") as f:
-                return json.load(f)
-    except:
-        pass
-    return {}
+# ─── DATABASE SETUP ───────────────────────────────────────────
 
-def save_reminders(reminders):
-    try:
-        with open(REMINDERS_FILE, "w") as f:
-            json.dump(reminders, f)
-    except Exception as e:
-        print("Save Error:", e)
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            phone TEXT PRIMARY KEY,
+            first_seen TEXT,
+            last_active TEXT,
+            message_count INTEGER DEFAULT 0
+        )
+    ''')
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS reminders (
+            phone TEXT PRIMARY KEY,
+            hour INTEGER,
+            minute INTEGER DEFAULT 0
+        )
+    ''')
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS progress (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            phone TEXT,
+            date TEXT,
+            weight REAL
+        )
+    ''')
+    conn.commit()
+    conn.close()
 
-def load_progress():
-    try:
-        if os.path.exists(PROGRESS_FILE):
-            with open(PROGRESS_FILE, "r") as f:
-                return json.load(f)
-    except:
-        pass
-    return {}
+def get_conn():
+    return sqlite3.connect(DB_FILE)
 
-def save_progress(progress):
-    try:
-        with open(PROGRESS_FILE, "w") as f:
-            json.dump(progress, f)
-    except Exception as e:
-        print("Progress Save Error:", e)
+# ─── USER FUNCTIONS ───────────────────────────────────────────
 
-user_reminders = load_reminders()
-user_progress = load_progress()
+def upsert_user(phone):
+    now = datetime.now(IST).strftime("%d %b %Y %H:%M")
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT phone FROM users WHERE phone=?", (phone,))
+    if c.fetchone():
+        c.execute("UPDATE users SET last_active=?, message_count=message_count+1 WHERE phone=?", (now, phone))
+    else:
+        c.execute("INSERT INTO users (phone, first_seen, last_active, message_count) VALUES (?,?,?,1)", (phone, now, now))
+    conn.commit()
+    conn.close()
+
+def get_all_users():
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT phone FROM users")
+    rows = c.fetchall()
+    conn.close()
+    return [r[0] for r in rows]
+
+# ─── REMINDER FUNCTIONS ───────────────────────────────────────
+
+def save_reminder(phone, hour):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("INSERT OR REPLACE INTO reminders (phone, hour, minute) VALUES (?,?,0)", (phone, hour))
+    conn.commit()
+    conn.close()
+
+def delete_reminder(phone):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("DELETE FROM reminders WHERE phone=?", (phone,))
+    conn.commit()
+    conn.close()
+
+def get_all_reminders():
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT phone, hour, minute FROM reminders")
+    rows = c.fetchall()
+    conn.close()
+    return {r[0]: {"hour": r[1], "minute": r[2]} for r in rows}
+
+def has_reminder(phone):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT phone FROM reminders WHERE phone=?", (phone,))
+    result = c.fetchone()
+    conn.close()
+    return result is not None
+
+# ─── PROGRESS FUNCTIONS ───────────────────────────────────────
+
+def save_progress_entry(phone, date, weight):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("INSERT INTO progress (phone, date, weight) VALUES (?,?,?)", (phone, date, weight))
+    conn.commit()
+    conn.close()
+
+def get_progress_entries(phone):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT date, weight FROM progress WHERE phone=? ORDER BY id ASC", (phone,))
+    rows = c.fetchall()
+    conn.close()
+    return [{"date": r[0], "weight": r[1]} for r in rows]
+
+# ─── KEEP ALIVE ───────────────────────────────────────────────
 
 def keep_alive():
     while True:
@@ -77,6 +149,8 @@ def keep_alive():
             print("Keep alive error:", e)
         import time
         time.sleep(600)
+
+# ─── AI FUNCTIONS ─────────────────────────────────────────────
 
 def ask_ai(question):
     try:
@@ -118,23 +192,22 @@ def ask_ai_calories(food):
         print("Calorie AI Error: " + str(e))
         return "Sorry, could not process that. Send 0 for the main menu."
 
+# ─── SEND MESSAGE ─────────────────────────────────────────────
+
 def send_message(phone, text):
     url = f"https://graph.facebook.com/v18.0/{PHONE_NUMBER_ID}/messages"
     headers = {"Authorization": f"Bearer {WHATSAPP_TOKEN}", "Content-Type": "application/json"}
     data = {"messaging_product": "whatsapp", "to": phone, "type": "text", "text": {"body": text}}
     requests.post(url, headers=headers, json=data)
 
+# ─── PROGRESS MESSAGE ─────────────────────────────────────────
+
 def get_progress_message(phone, new_weight):
     now = datetime.now(IST)
     today = now.strftime("%d %b %Y")
 
-    if phone not in user_progress:
-        user_progress[phone] = []
-
-    entries = user_progress[phone]
-    entries.append({"date": today, "weight": new_weight})
-    user_progress[phone] = entries
-    save_progress(user_progress)
+    save_progress_entry(phone, today, new_weight)
+    entries = get_progress_entries(phone)
 
     msg = f"📊 *Progress Saved!*\n\nDate: {today}\nWeight: {new_weight} kg\n\n"
 
@@ -161,58 +234,50 @@ def get_progress_message(phone, new_weight):
     msg += "\n\nSend *19* anytime to log your weight!\nSend *0* for Main Menu"
     return msg
 
+# ─── SCHEDULED JOBS ───────────────────────────────────────────
+
 def send_weekly_progress_report():
     now = datetime.now(IST)
     if now.weekday() != 6 or now.hour != 9:
         return
 
     today_str = str(now.date())
-    all_users = set(list(user_reminders.keys()) + list(user_sessions.keys()) + list(user_progress.keys()))
+    all_users = get_all_users()
 
     for phone in all_users:
         if weekly_report_sent.get(phone) == today_str:
             continue
 
-        entries = user_progress.get(phone, [])
+        entries = get_progress_entries(phone)
 
         if len(entries) >= 2:
             latest = entries[-1]
             previous = entries[-2]
             diff = round(latest["weight"] - previous["weight"], 1)
-
             if diff < 0:
                 change_msg = f"🎉 You lost *{abs(diff)} kg* this week! Keep it up!"
             elif diff > 0:
                 change_msg = f"📈 You gained *{diff} kg* this week! Bulking nicely!"
             else:
                 change_msg = "⚖️ Weight maintained this week! Consistency is key!"
-
             msg = (
-                f"📈 *Weekly Progress Report!*\n\n"
-                f"Happy Sunday! Here's your week summary:\n\n"
+                f"📈 *Weekly Progress Report!*\n\nHappy Sunday! Here's your week summary:\n\n"
                 f"Last logged: {previous['date']} → {previous['weight']} kg\n"
                 f"This week: {latest['date']} → {latest['weight']} kg\n\n"
-                f"{change_msg}\n\n"
-                f"Overall journey: *{entries[0]['weight']} kg → {latest['weight']} kg*\n\n"
-                f"Send *19* to log today's weight!\n"
-                f"Send *0* for Main Menu 💪"
+                f"{change_msg}\n\nOverall journey: *{entries[0]['weight']} kg → {latest['weight']} kg*\n\n"
+                f"Send *19* to log today's weight!\nSend *0* for Main Menu 💪"
             )
         elif len(entries) == 1:
             msg = (
-                f"📈 *Weekly Progress Report!*\n\n"
-                f"Happy Sunday! 🌟\n\n"
+                f"📈 *Weekly Progress Report!*\n\nHappy Sunday! 🌟\n\n"
                 f"You have 1 weight entry so far: *{entries[0]['weight']} kg*\n\n"
-                f"Log your weight every week to track your progress!\n\n"
-                f"Send *19* to log today's weight!\n"
-                f"Send *0* for Main Menu 💪"
+                f"Send *19* to log today's weight!\nSend *0* for Main Menu 💪"
             )
         else:
             msg = (
-                f"📈 *Weekly Progress Report!*\n\n"
-                f"Happy Sunday! 🌟\n\n"
+                f"📈 *Weekly Progress Report!*\n\nHappy Sunday! 🌟\n\n"
                 f"You haven't logged your weight yet!\n\n"
-                f"Start tracking today — send *19* to log your first weight entry!\n\n"
-                f"Send *0* for Main Menu 💪"
+                f"Send *19* to log your first entry!\nSend *0* for Main Menu 💪"
             )
 
         send_message(phone, msg)
@@ -223,21 +288,19 @@ def send_daily_reminders():
     day_of_week = now.weekday()
     today = str(now.date())
     workout = WORKOUT_SCHEDULE[day_of_week]
-    for phone, reminder in list(user_reminders.items()):
+    all_reminders = get_all_reminders()
+
+    for phone, reminder in all_reminders.items():
         if reminder["hour"] == now.hour and now.minute < 5:
-            last_sent = reminder_sent_today.get(phone)
-            if last_sent == today:
+            if reminder_sent_today.get(phone) == today:
                 continue
             if day_of_week == 6:
                 msg = "🌟 Good morning! Today is your *Rest Day* — recover and stay hydrated! 💧\n\nSend 0 for Main Menu"
             else:
                 msg = (
-                    f"🔔 *GymBot Reminder!*\n\n"
-                    f"Good morning! Time for your workout!\n\n"
-                    f"Today: *{workout}*\n\n"
-                    f"Send *1* for today's workout plan!\n"
-                    f"Send *0* for main menu\n\n"
-                    f"Let's crush it today! 💪🔥"
+                    f"🔔 *GymBot Reminder!*\n\nGood morning! Time for your workout!\n\n"
+                    f"Today: *{workout}*\n\nSend *1* for today's workout plan!\n"
+                    f"Send *0* for main menu\n\nLet's crush it today! 💪🔥"
                 )
             send_message(phone, msg)
             reminder_sent_today[phone] = today
@@ -249,39 +312,24 @@ def send_morning_motivation():
         return
     quote = ask_ai("Give me one powerful unique gym and fitness motivational quote for today. Keep it under 3 lines. Do not add Send 0 for Main Menu at the end.")
     msg = f"🌅 *Good Morning!*\n\n{quote}\n\n💪 Let's crush today's workout!\nSend *0* for Main Menu"
-    all_users = set(list(user_reminders.keys()) + list(user_sessions.keys()))
-    for phone in all_users:
+    for phone in get_all_users():
         if motivation_sent_today.get(phone) == today:
             continue
         send_message(phone, msg)
         motivation_sent_today[phone] = today
 
+# ─── MENUS & CONTENT ──────────────────────────────────────────
+
 def get_main_menu():
     return (
-        "Welcome to GymBot! 🏋️\n\n"
-        "I am your personal AI fitness assistant.\n\n"
-        "Reply with a number:\n\n"
-        "1 - Workout Plans\n"
-        "2 - Diet and Nutrition\n"
-        "3 - BMI Calculator\n"
-        "4 - Weekly Schedule\n"
-        "5 - Membership Info\n"
-        "6 - Exercise Tips\n"
-        "7 - Supplement Guide\n"
-        "8 - Motivational Quote\n"
-        "9 - 30 Day Challenge\n"
-        "10 - Calorie Calculator\n"
-        "11 - Water Intake Calculator\n"
-        "12 - Body Fat Calculator\n"
-        "13 - Cardio Guide\n"
-        "14 - Recovery and Sleep Tips\n"
-        "15 - Ask AI (Any Fitness Question)\n"
-        "16 - Set Workout Reminder 🔔\n"
-        "17 - Cancel Reminder ❌\n"
-        "18 - Calorie Counter 🍽️\n"
-        "19 - Progress Tracker 📊\n"
-        "0 - Main Menu (anytime)\n\n"
-        "Or just TYPE any fitness question!"
+        "Welcome to GymBot! 🏋️\n\nI am your personal AI fitness assistant.\n\nReply with a number:\n\n"
+        "1 - Workout Plans\n2 - Diet and Nutrition\n3 - BMI Calculator\n4 - Weekly Schedule\n"
+        "5 - Membership Info\n6 - Exercise Tips\n7 - Supplement Guide\n8 - Motivational Quote\n"
+        "9 - 30 Day Challenge\n10 - Calorie Calculator\n11 - Water Intake Calculator\n"
+        "12 - Body Fat Calculator\n13 - Cardio Guide\n14 - Recovery and Sleep Tips\n"
+        "15 - Ask AI (Any Fitness Question)\n16 - Set Workout Reminder 🔔\n"
+        "17 - Cancel Reminder ❌\n18 - Calorie Counter 🍽️\n19 - Progress Tracker 📊\n"
+        "0 - Main Menu (anytime)\n\nOr just TYPE any fitness question!"
     )
 
 def get_workout_menu():
@@ -327,7 +375,10 @@ def get_cardio_guide():
 def get_recovery_tips():
     return "Recovery and Sleep Tips 😴\n\nSleep:\n- 7-9 hours every night\n- Sleep at same time daily\n- No phone 30 min before bed\n\nRecovery:\n- Stretch 10 min after workout\n- Foam roll sore muscles\n- Ice pack for injuries\n- Active rest on off days (walk)\n\nNutrition for Recovery:\n- Eat protein within 30 min\n- Stay hydrated\n- Avoid alcohol\n\nRemember: Muscles grow during REST!\nSend 0 for Main Menu"
 
+# ─── MESSAGE HANDLER ──────────────────────────────────────────
+
 def handle_message(phone, message):
+    upsert_user(phone)
     msg = message.strip()
     msg_lower = msg.lower()
     session = user_sessions.get(phone, {"state": "main"})
@@ -338,9 +389,8 @@ def handle_message(phone, message):
         return
 
     if "stop reminder" in msg_lower or "cancel reminder" in msg_lower or msg == "17":
-        if phone in user_reminders:
-            del user_reminders[phone]
-            save_reminders(user_reminders)
+        if has_reminder(phone):
+            delete_reminder(phone)
             if phone in reminder_sent_today:
                 del reminder_sent_today[phone]
             send_message(phone, "✅ Reminder cancelled!\n\nSend 0 for Main Menu")
@@ -396,7 +446,7 @@ def handle_message(phone, message):
             send_message(phone, "🍽️ *Calorie Counter*\n\nType any food or meal!\n\nExamples:\n- 2 eggs and oats\n- rice 1 cup and chicken\n- banana and peanut butter toast\n\nSend 0 to go back to Main Menu")
         elif msg == "19":
             user_sessions[phone] = {"state": "progress_weight"}
-            entries = user_progress.get(phone, [])
+            entries = get_progress_entries(phone)
             if entries:
                 last = entries[-1]
                 send_message(phone, f"📊 *Progress Tracker*\n\nLast logged: {last['date']} → {last['weight']} kg\n\nEnter your current weight in kg (e.g. 75.5):\n\nSend 0 to cancel")
@@ -569,8 +619,7 @@ def handle_message(phone, message):
         try:
             hour = int(msg)
             if 0 <= hour <= 23:
-                user_reminders[phone] = {"hour": hour, "minute": 0}
-                save_reminders(user_reminders)
+                save_reminder(phone, hour)
                 if phone in reminder_sent_today:
                     del reminder_sent_today[phone]
                 user_sessions[phone] = {"state": "main"}
@@ -581,6 +630,8 @@ def handle_message(phone, message):
                 send_message(phone, "Enter a valid hour (0-23):")
         except:
             send_message(phone, "Enter a number (e.g. 7 for 7 AM, 18 for 6 PM):")
+
+# ─── FLASK ROUTES ─────────────────────────────────────────────
 
 @app.route('/webhook', methods=['GET'])
 def verify():
@@ -609,13 +660,16 @@ def webhook():
 def home():
     return 'GymBot is running! 💪', 200
 
+# ─── STARTUP ──────────────────────────────────────────────────
+
+init_db()
+
 scheduler = BackgroundScheduler(timezone=IST)
 scheduler.add_job(send_daily_reminders, 'cron', minute='*')
 scheduler.add_job(send_morning_motivation, 'cron', minute='*')
 scheduler.add_job(send_weekly_progress_report, 'cron', minute='*')
 scheduler.start()
 
-# Keep Render alive — pings itself every 10 minutes
 threading.Thread(target=keep_alive, daemon=True).start()
 
 if __name__ == '__main__':
