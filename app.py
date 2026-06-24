@@ -1,4 +1,4 @@
-from flask import Flask, request
+from flask import Flask, request, jsonify
 import requests
 import os
 import pytz
@@ -13,6 +13,7 @@ VERIFY_TOKEN = os.getenv("VERIFY_TOKEN")
 WHATSAPP_TOKEN = os.getenv("WHATSAPP_TOKEN")
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "gymbot123")
 
 IST = pytz.timezone("Asia/Kolkata")
 user_sessions = {}
@@ -37,36 +38,28 @@ WORKOUT_SCHEDULE = {
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            phone TEXT PRIMARY KEY,
-            first_seen TEXT,
-            last_active TEXT,
-            message_count INTEGER DEFAULT 0
-        )
-    ''')
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS reminders (
-            phone TEXT PRIMARY KEY,
-            hour INTEGER,
-            minute INTEGER DEFAULT 0
-        )
-    ''')
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS progress (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            phone TEXT,
-            date TEXT,
-            weight REAL
-        )
-    ''')
+    c.execute('''CREATE TABLE IF NOT EXISTS users (
+        phone TEXT PRIMARY KEY,
+        first_seen TEXT,
+        last_active TEXT,
+        message_count INTEGER DEFAULT 0
+    )''')
+    c.execute('''CREATE TABLE IF NOT EXISTS reminders (
+        phone TEXT PRIMARY KEY,
+        hour INTEGER,
+        minute INTEGER DEFAULT 0
+    )''')
+    c.execute('''CREATE TABLE IF NOT EXISTS progress (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        phone TEXT,
+        date TEXT,
+        weight REAL
+    )''')
     conn.commit()
     conn.close()
 
 def get_conn():
     return sqlite3.connect(DB_FILE)
-
-# ─── USER FUNCTIONS ───────────────────────────────────────────
 
 def upsert_user(phone):
     now = datetime.now(IST).strftime("%d %b %Y %H:%M")
@@ -87,8 +80,6 @@ def get_all_users():
     rows = c.fetchall()
     conn.close()
     return [r[0] for r in rows]
-
-# ─── REMINDER FUNCTIONS ───────────────────────────────────────
 
 def save_reminder(phone, hour):
     conn = get_conn()
@@ -119,8 +110,6 @@ def has_reminder(phone):
     result = c.fetchone()
     conn.close()
     return result is not None
-
-# ─── PROGRESS FUNCTIONS ───────────────────────────────────────
 
 def save_progress_entry(phone, date, weight):
     conn = get_conn()
@@ -178,21 +167,18 @@ def ask_ai_calories(food):
         data = {
             "model": "llama-3.3-70b-versatile",
             "messages": [
-                {"role": "system", "content": "You are a nutrition expert. When given food items, calculate and list the calories for each item and give a total. Format your response clearly with each food item on a new line with its calories, then a total at the end. Keep it short and precise. Use this format:\n🍽️ Calorie Count:\n• [food item] = [calories] kcal\n• [food item] = [calories] kcal\n\n🔥 Total = [total] kcal\n\n[one short fitness tip related to the food]"},
+                {"role": "system", "content": "You are a nutrition expert. When given food items, calculate and list the calories for each item and give a total. Format: 🍽️ Calorie Count:\n• item = X kcal\n🔥 Total = X kcal\n[one tip]"},
                 {"role": "user", "content": f"Calculate calories for: {food}"}
             ]
         }
         response = requests.post("https://api.groq.com/openai/v1/chat/completions", headers=headers, json=data, timeout=10)
         result = response.json()
         if "choices" in result:
-            return result["choices"][0]["message"]["content"].strip() + "\n\n_Send 18 for more calorie checks_\n_Send 0 for Main Menu_ 💪"
+            return result["choices"][0]["message"]["content"].strip() + "\n\n_Send 18 for more_\n_Send 0 for Main Menu_ 💪"
         else:
-            return "Could not calculate calories right now. Try again! 💪\n\nSend 0 for Main Menu"
+            return "Could not calculate calories right now. Try again! 💪"
     except Exception as e:
-        print("Calorie AI Error: " + str(e))
         return "Sorry, could not process that. Send 0 for the main menu."
-
-# ─── SEND MESSAGE ─────────────────────────────────────────────
 
 def send_message(phone, text):
     url = f"https://graph.facebook.com/v18.0/{PHONE_NUMBER_ID}/messages"
@@ -200,38 +186,28 @@ def send_message(phone, text):
     data = {"messaging_product": "whatsapp", "to": phone, "type": "text", "text": {"body": text}}
     requests.post(url, headers=headers, json=data)
 
-# ─── PROGRESS MESSAGE ─────────────────────────────────────────
-
 def get_progress_message(phone, new_weight):
     now = datetime.now(IST)
     today = now.strftime("%d %b %Y")
-
     save_progress_entry(phone, today, new_weight)
     entries = get_progress_entries(phone)
-
     msg = f"📊 *Progress Saved!*\n\nDate: {today}\nWeight: {new_weight} kg\n\n"
-
     if len(entries) == 1:
-        msg += "This is your first entry! Keep logging every week to track your progress! 💪"
+        msg += "This is your first entry! Keep logging every week! 💪"
     else:
         msg += "*Your Journey:*\n"
-        show_entries = entries[-5:]
-        for entry in show_entries:
+        for entry in entries[-5:]:
             marker = "← Today" if entry == entries[-1] else ""
             msg += f"• {entry['date']} → {entry['weight']} kg {marker}\n"
-
-        first_weight = entries[0]["weight"]
-        diff = round(new_weight - first_weight, 1)
-
+        diff = round(new_weight - entries[0]["weight"], 1)
         msg += "\n"
         if diff < 0:
-            msg += f"🎉 You lost *{abs(diff)} kg* since you started! Amazing progress!"
+            msg += f"🎉 You lost *{abs(diff)} kg* since you started!"
         elif diff > 0:
-            msg += f"📈 You gained *{diff} kg* since you started! Bulking up nicely!"
+            msg += f"📈 You gained *{diff} kg* since you started!"
         else:
-            msg += "⚖️ Weight maintained since start! Stay consistent!"
-
-    msg += "\n\nSend *19* anytime to log your weight!\nSend *0* for Main Menu"
+            msg += "⚖️ Weight maintained! Stay consistent!"
+    msg += "\n\nSend *19* to log weight!\nSend *0* for Main Menu"
     return msg
 
 # ─── SCHEDULED JOBS ───────────────────────────────────────────
@@ -240,46 +216,21 @@ def send_weekly_progress_report():
     now = datetime.now(IST)
     if now.weekday() != 6 or now.hour != 9:
         return
-
     today_str = str(now.date())
-    all_users = get_all_users()
-
-    for phone in all_users:
+    for phone in get_all_users():
         if weekly_report_sent.get(phone) == today_str:
             continue
-
         entries = get_progress_entries(phone)
-
         if len(entries) >= 2:
-            latest = entries[-1]
-            previous = entries[-2]
+            latest, previous = entries[-1], entries[-2]
             diff = round(latest["weight"] - previous["weight"], 1)
-            if diff < 0:
-                change_msg = f"🎉 You lost *{abs(diff)} kg* this week! Keep it up!"
-            elif diff > 0:
-                change_msg = f"📈 You gained *{diff} kg* this week! Bulking nicely!"
-            else:
-                change_msg = "⚖️ Weight maintained this week! Consistency is key!"
-            msg = (
-                f"📈 *Weekly Progress Report!*\n\nHappy Sunday! Here's your week summary:\n\n"
-                f"Last logged: {previous['date']} → {previous['weight']} kg\n"
-                f"This week: {latest['date']} → {latest['weight']} kg\n\n"
-                f"{change_msg}\n\nOverall journey: *{entries[0]['weight']} kg → {latest['weight']} kg*\n\n"
-                f"Send *19* to log today's weight!\nSend *0* for Main Menu 💪"
-            )
-        elif len(entries) == 1:
-            msg = (
-                f"📈 *Weekly Progress Report!*\n\nHappy Sunday! 🌟\n\n"
-                f"You have 1 weight entry so far: *{entries[0]['weight']} kg*\n\n"
-                f"Send *19* to log today's weight!\nSend *0* for Main Menu 💪"
-            )
+            change_msg = f"🎉 Lost *{abs(diff)} kg*!" if diff < 0 else (f"📈 Gained *{diff} kg*!" if diff > 0 else "⚖️ Maintained!")
+            msg = (f"📈 *Weekly Progress Report!*\n\nHappy Sunday! 🌟\n\n"
+                   f"Last: {previous['date']} → {previous['weight']} kg\n"
+                   f"Now: {latest['date']} → {latest['weight']} kg\n\n{change_msg}\n\n"
+                   f"Journey: *{entries[0]['weight']} kg → {latest['weight']} kg*\n\nSend *19* to log!\nSend *0* for Menu 💪")
         else:
-            msg = (
-                f"📈 *Weekly Progress Report!*\n\nHappy Sunday! 🌟\n\n"
-                f"You haven't logged your weight yet!\n\n"
-                f"Send *19* to log your first entry!\nSend *0* for Main Menu 💪"
-            )
-
+            msg = "📈 *Weekly Report!*\n\nHappy Sunday! 🌟\n\nSend *19* to log your weight and start tracking! 💪"
         send_message(phone, msg)
         weekly_report_sent[phone] = today_str
 
@@ -287,21 +238,16 @@ def send_daily_reminders():
     now = datetime.now(IST)
     day_of_week = now.weekday()
     today = str(now.date())
-    workout = WORKOUT_SCHEDULE[day_of_week]
-    all_reminders = get_all_reminders()
-
-    for phone, reminder in all_reminders.items():
+    for phone, reminder in get_all_reminders().items():
         if reminder["hour"] == now.hour and now.minute < 5:
             if reminder_sent_today.get(phone) == today:
                 continue
             if day_of_week == 6:
-                msg = "🌟 Good morning! Today is your *Rest Day* — recover and stay hydrated! 💧\n\nSend 0 for Main Menu"
+                msg = "🌟 Rest Day today — recover and stay hydrated! 💧\n\nSend 0 for Main Menu"
             else:
-                msg = (
-                    f"🔔 *GymBot Reminder!*\n\nGood morning! Time for your workout!\n\n"
-                    f"Today: *{workout}*\n\nSend *1* for today's workout plan!\n"
-                    f"Send *0* for main menu\n\nLet's crush it today! 💪🔥"
-                )
+                msg = (f"🔔 *GymBot Reminder!*\n\nTime for your workout!\n\n"
+                       f"Today: *{WORKOUT_SCHEDULE[day_of_week]}*\n\n"
+                       f"Send *1* for workout plan!\nLet's crush it! 💪🔥")
             send_message(phone, msg)
             reminder_sent_today[phone] = today
 
@@ -310,13 +256,140 @@ def send_morning_motivation():
     today = str(now.date())
     if now.hour != 8:
         return
-    quote = ask_ai("Give me one powerful unique gym and fitness motivational quote for today. Keep it under 3 lines. Do not add Send 0 for Main Menu at the end.")
-    msg = f"🌅 *Good Morning!*\n\n{quote}\n\n💪 Let's crush today's workout!\nSend *0* for Main Menu"
+    quote = ask_ai("Give me one powerful gym motivational quote. Under 3 lines. No menu text.")
+    msg = f"🌅 *Good Morning!*\n\n{quote}\n\n💪 Let's crush today!\nSend *0* for Main Menu"
     for phone in get_all_users():
         if motivation_sent_today.get(phone) == today:
             continue
         send_message(phone, msg)
         motivation_sent_today[phone] = today
+
+# ─── ADMIN PANEL ──────────────────────────────────────────────
+
+@app.route('/admin')
+def admin_panel():
+    password = request.args.get('key', '')
+    if password != ADMIN_PASSWORD:
+        return '''
+        <html><head><title>GymBot Admin</title>
+        <style>
+        body { font-family: Arial, sans-serif; background: #1a1a2e; color: white;
+               display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .box { background: #16213e; padding: 40px; border-radius: 12px; text-align: center; }
+        input { padding: 12px; border-radius: 8px; border: none; margin: 10px 0; width: 250px;
+                font-size: 16px; text-align: center; }
+        button { background: #0f3460; color: white; padding: 12px 30px; border: none;
+                 border-radius: 8px; cursor: pointer; font-size: 16px; margin-top: 10px; }
+        button:hover { background: #e94560; }
+        </style></head>
+        <body><div class="box">
+        <h2>🏋️ GymBot Admin</h2>
+        <p>Enter admin password</p>
+        <form method="get">
+        <input type="password" name="key" placeholder="Password"><br>
+        <button type="submit">Login</button>
+        </form></div></body></html>
+        ''', 401
+
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM users")
+    total_users = c.fetchone()[0]
+    c.execute("SELECT COUNT(*) FROM reminders")
+    total_reminders = c.fetchone()[0]
+    c.execute("SELECT SUM(message_count) FROM users")
+    total_messages = c.fetchone()[0] or 0
+    c.execute("SELECT COUNT(DISTINCT phone) FROM progress")
+    tracking_users = c.fetchone()[0]
+    c.execute("SELECT phone, first_seen, last_active, message_count FROM users ORDER BY message_count DESC")
+    users = c.fetchall()
+    conn.close()
+
+    users_html = ""
+    for u in users:
+        phone_hidden = u[0][:4] + "****" + u[0][-3:]
+        has_rem = "🔔 Yes" if u[0] in get_all_reminders() else "❌ No"
+        prog = get_progress_entries(u[0])
+        weight_info = f"{prog[-1]['weight']} kg" if prog else "—"
+        users_html += f"""
+        <tr>
+            <td>{phone_hidden}</td>
+            <td>{u[1]}</td>
+            <td>{u[2]}</td>
+            <td><b>{u[3]}</b></td>
+            <td>{has_rem}</td>
+            <td>{weight_info}</td>
+        </tr>"""
+
+    return f'''
+    <html>
+    <head>
+        <title>GymBot Admin Panel</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+            * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+            body {{ font-family: Arial, sans-serif; background: #0f0f1a; color: #e0e0e0; padding: 20px; }}
+            h1 {{ color: #00d4aa; margin-bottom: 20px; font-size: 28px; }}
+            h2 {{ color: #00d4aa; margin: 30px 0 15px; font-size: 20px; }}
+            .stats {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; margin-bottom: 30px; }}
+            .card {{ background: #1a1a2e; border-radius: 12px; padding: 20px; text-align: center; border: 1px solid #00d4aa33; }}
+            .card .number {{ font-size: 42px; font-weight: bold; color: #00d4aa; }}
+            .card .label {{ font-size: 13px; color: #888; margin-top: 5px; }}
+            table {{ width: 100%; border-collapse: collapse; background: #1a1a2e; border-radius: 12px; overflow: hidden; }}
+            th {{ background: #00d4aa22; color: #00d4aa; padding: 12px 15px; text-align: left; font-size: 13px; }}
+            td {{ padding: 12px 15px; border-bottom: 1px solid #ffffff11; font-size: 13px; }}
+            tr:hover td {{ background: #ffffff08; }}
+            .badge {{ background: #00d4aa22; color: #00d4aa; padding: 3px 8px; border-radius: 20px; font-size: 12px; }}
+            .refresh {{ background: #00d4aa; color: #0f0f1a; padding: 8px 20px; border-radius: 8px;
+                        text-decoration: none; font-weight: bold; display: inline-block; margin-bottom: 20px; }}
+            .refresh:hover {{ background: #00b894; }}
+            .footer {{ text-align: center; color: #444; margin-top: 30px; font-size: 12px; }}
+        </style>
+    </head>
+    <body>
+        <h1>🏋️ GymBot Admin Panel</h1>
+        <a class="refresh" href="/admin?key={password}">🔄 Refresh</a>
+
+        <div class="stats">
+            <div class="card">
+                <div class="number">{total_users}</div>
+                <div class="label">Total Users 👥</div>
+            </div>
+            <div class="card">
+                <div class="number">{total_messages}</div>
+                <div class="label">Total Messages 💬</div>
+            </div>
+            <div class="card">
+                <div class="number">{total_reminders}</div>
+                <div class="label">Active Reminders 🔔</div>
+            </div>
+            <div class="card">
+                <div class="number">{tracking_users}</div>
+                <div class="label">Tracking Weight 📊</div>
+            </div>
+        </div>
+
+        <h2>👥 All Users</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Phone</th>
+                    <th>First Seen</th>
+                    <th>Last Active</th>
+                    <th>Messages</th>
+                    <th>Reminder</th>
+                    <th>Last Weight</th>
+                </tr>
+            </thead>
+            <tbody>
+                {users_html}
+            </tbody>
+        </table>
+
+        <div class="footer">GymBot Admin Panel • {datetime.now(IST).strftime("%d %b %Y %H:%M")} IST</div>
+    </body>
+    </html>
+    '''
 
 # ─── MENUS & CONTENT ──────────────────────────────────────────
 
@@ -364,16 +437,16 @@ def get_weekly_schedule():
     return "Weekly Gym Schedule\n\nMonday - Chest and Triceps\nTuesday - Back and Biceps\nWednesday - Legs and Glutes\nThursday - Shoulders and Arms\nFriday - Core and Abs\nSaturday - Cardio / Full Body\nSunday - Rest and Recovery\n\nConsistency beats Intensity!"
 
 def get_supplement_guide():
-    return "Supplement Guide 💊\n\nBeginner Essentials:\n- Whey Protein: 1-2 scoops post workout\n- Creatine: 5g daily (any time)\n- Multivitamin: 1 daily with food\n\nIntermediate:\n- Pre-workout: 30 min before gym\n- BCAA: During workout\n- Fish Oil: 1g daily\n\nAdvanced:\n- Casein Protein: Before bed\n- Glutamine: Post workout\n\n⚠️ Food first, supplements second!\nSend 0 for Main Menu"
+    return "Supplement Guide 💊\n\nBeginner Essentials:\n- Whey Protein: 1-2 scoops post workout\n- Creatine: 5g daily\n- Multivitamin: 1 daily\n\nIntermediate:\n- Pre-workout: 30 min before gym\n- BCAA: During workout\n- Fish Oil: 1g daily\n\nAdvanced:\n- Casein Protein: Before bed\n- Glutamine: Post workout\n\n⚠️ Food first, supplements second!\nSend 0 for Main Menu"
 
 def get_30_day_challenge():
-    return "30 Day Fitness Challenge 🔥\n\nWeek 1 - Foundation:\n- 20 push-ups daily\n- 30 squats daily\n- 1 min plank daily\n\nWeek 2 - Build:\n- 30 push-ups daily\n- 40 squats daily\n- 2 min plank daily\n\nWeek 3 - Intensity:\n- 40 push-ups daily\n- 50 squats daily\n- 3 min plank daily\n\nWeek 4 - Beast Mode:\n- 50 push-ups daily\n- 60 squats daily\n- 4 min plank daily\n\nNo excuses — consistency is key! 💪\nSend 0 for Main Menu"
+    return "30 Day Fitness Challenge 🔥\n\nWeek 1: 20 push-ups, 30 squats, 1 min plank daily\nWeek 2: 30 push-ups, 40 squats, 2 min plank daily\nWeek 3: 40 push-ups, 50 squats, 3 min plank daily\nWeek 4: 50 push-ups, 60 squats, 4 min plank daily\n\nConsistency is key! 💪\nSend 0 for Main Menu"
 
 def get_cardio_guide():
-    return "Cardio Guide 🏃\n\nFor Weight Loss:\n- 30-45 min moderate cardio\n- 5 days per week\n- Heart rate: 60-70% max\n\nFor Endurance:\n- Long slow runs 45-60 min\n- 3-4 days per week\n\nHIIT (Best for fat burn):\n- 20 sec sprint + 40 sec rest\n- Repeat 10-15 times\n- Only 20 mins needed!\n\nBest Cardio Options:\nRunning, Cycling, Swimming, Jump rope\n\nDo cardio AFTER weights!\nSend 0 for Main Menu"
+    return "Cardio Guide 🏃\n\nWeight Loss: 30-45 min, 5 days/week, 60-70% max HR\nEndurance: 45-60 min long runs, 3-4 days/week\nHIIT: 20s sprint + 40s rest, 10-15 rounds, 20 mins\n\nBest: Running, Cycling, Swimming, Jump rope\n\nDo cardio AFTER weights!\nSend 0 for Main Menu"
 
 def get_recovery_tips():
-    return "Recovery and Sleep Tips 😴\n\nSleep:\n- 7-9 hours every night\n- Sleep at same time daily\n- No phone 30 min before bed\n\nRecovery:\n- Stretch 10 min after workout\n- Foam roll sore muscles\n- Ice pack for injuries\n- Active rest on off days (walk)\n\nNutrition for Recovery:\n- Eat protein within 30 min\n- Stay hydrated\n- Avoid alcohol\n\nRemember: Muscles grow during REST!\nSend 0 for Main Menu"
+    return "Recovery and Sleep Tips 😴\n\nSleep: 7-9 hours, same time daily\nStretch 10 min after workout\nFoam roll sore muscles\nDrink 3-4 litres water\nEat protein within 30 min post workout\nAvoid alcohol\n\nMuscles grow during REST!\nSend 0 for Main Menu"
 
 # ─── MESSAGE HANDLER ──────────────────────────────────────────
 
@@ -443,15 +516,15 @@ def handle_message(phone, message):
             send_message(phone, "🔔 Set Workout Reminder\n\nEnter hour in 24hr format (IST)\nExamples:\n- 6 = 6:00 AM\n- 7 = 7:00 AM\n- 18 = 6:00 PM")
         elif msg == "18":
             user_sessions[phone] = {"state": "calorie_counter"}
-            send_message(phone, "🍽️ *Calorie Counter*\n\nType any food or meal!\n\nExamples:\n- 2 eggs and oats\n- rice 1 cup and chicken\n- banana and peanut butter toast\n\nSend 0 to go back to Main Menu")
+            send_message(phone, "🍽️ *Calorie Counter*\n\nType any food or meal!\n\nExamples:\n- 2 eggs and oats\n- rice 1 cup and chicken\n\nSend 0 to go back to Main Menu")
         elif msg == "19":
             user_sessions[phone] = {"state": "progress_weight"}
             entries = get_progress_entries(phone)
             if entries:
                 last = entries[-1]
-                send_message(phone, f"📊 *Progress Tracker*\n\nLast logged: {last['date']} → {last['weight']} kg\n\nEnter your current weight in kg (e.g. 75.5):\n\nSend 0 to cancel")
+                send_message(phone, f"📊 *Progress Tracker*\n\nLast logged: {last['date']} → {last['weight']} kg\n\nEnter current weight in kg:\n\nSend 0 to cancel")
             else:
-                send_message(phone, "📊 *Progress Tracker*\n\nTrack your weight journey here!\n\nEnter your current weight in kg (e.g. 75.5):\n\nSend 0 to cancel")
+                send_message(phone, "📊 *Progress Tracker*\n\nTrack your weight journey here!\n\nEnter your current weight in kg:\n\nSend 0 to cancel")
         else:
             send_message(phone, ask_ai(msg))
 
