@@ -4,6 +4,7 @@ import os
 import pytz
 import threading
 import sqlite3
+import random
 from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -31,6 +32,32 @@ WORKOUT_SCHEDULE = {
     4: "Core and Abs 🔥",
     5: "Cardio / Full Body 🏃",
     6: "Rest and Recovery 😴"
+}
+
+WORKOUT_IMAGES = {
+    "1": "https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?w=800",
+    "2": "https://images.unsplash.com/photo-1603287681836-b174ce5074c2?w=800",
+    "3": "https://images.unsplash.com/photo-1434682881908-b43d0467b798?w=800",
+    "4": "https://images.unsplash.com/photo-1532029837206-abbe2b7620e3?w=800",
+    "5": "https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=800",
+    "6": "https://images.unsplash.com/photo-1583454110551-21f2fa2afe61?w=800",
+}
+
+MOTIVATION_IMAGES = [
+    "https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=800",
+    "https://images.unsplash.com/photo-1574680096145-d05b474e2155?w=800",
+    "https://images.unsplash.com/photo-1526506118085-60ce8714f8c5?w=800",
+    "https://images.unsplash.com/photo-1541534741688-6078c6bfb5c5?w=800",
+    "https://images.unsplash.com/photo-1549060279-7e168fcee0c2?w=800",
+]
+
+DIET_IMAGES = {
+    "1": "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=800",
+    "2": "https://images.unsplash.com/photo-1547496502-affa22d38842?w=800",
+    "3": "https://images.unsplash.com/photo-1490645935967-10de6ba17061?w=800",
+    "4": "https://images.unsplash.com/photo-1559847844-5315695dadae?w=800",
+    "5": "https://images.unsplash.com/photo-1532550907401-a500c9a57435?w=800",
+    "6": "https://images.unsplash.com/photo-1548839140-29a749e1cf4d?w=800",
 }
 
 # ─── DATABASE SETUP ───────────────────────────────────────────
@@ -156,10 +183,10 @@ def ask_ai(question):
         if "choices" in result:
             return result["choices"][0]["message"]["content"].strip() + "\n\n_Send 0 for Main Menu_ 💪"
         else:
-            return "AI is temporarily unavailable. Try again in a moment! 💪\n\nSend 0 for Main Menu"
+            return "AI is temporarily unavailable. Try again! 💪\n\nSend 0 for Main Menu"
     except Exception as e:
         print("AI Error: " + str(e))
-        return "Sorry, I could not process that right now. Send 0 for the main menu."
+        return "Sorry, could not process that. Send 0 for the main menu."
 
 def ask_ai_calories(food):
     try:
@@ -176,15 +203,36 @@ def ask_ai_calories(food):
         if "choices" in result:
             return result["choices"][0]["message"]["content"].strip() + "\n\n_Send 18 for more_\n_Send 0 for Main Menu_ 💪"
         else:
-            return "Could not calculate calories right now. Try again! 💪"
+            return "Could not calculate calories. Try again! 💪"
     except Exception as e:
         return "Sorry, could not process that. Send 0 for the main menu."
+
+# ─── SEND FUNCTIONS ───────────────────────────────────────────
 
 def send_message(phone, text):
     url = f"https://graph.facebook.com/v18.0/{PHONE_NUMBER_ID}/messages"
     headers = {"Authorization": f"Bearer {WHATSAPP_TOKEN}", "Content-Type": "application/json"}
     data = {"messaging_product": "whatsapp", "to": phone, "type": "text", "text": {"body": text}}
     requests.post(url, headers=headers, json=data)
+
+def send_image(phone, image_url, caption=""):
+    try:
+        url = f"https://graph.facebook.com/v18.0/{PHONE_NUMBER_ID}/messages"
+        headers = {"Authorization": f"Bearer {WHATSAPP_TOKEN}", "Content-Type": "application/json"}
+        data = {
+            "messaging_product": "whatsapp",
+            "to": phone,
+            "type": "image",
+            "image": {
+                "link": image_url,
+                "caption": caption
+            }
+        }
+        requests.post(url, headers=headers, json=data)
+    except Exception as e:
+        print("Image send error:", e)
+
+# ─── PROGRESS MESSAGE ─────────────────────────────────────────
 
 def get_progress_message(phone, new_weight):
     now = datetime.now(IST)
@@ -230,7 +278,7 @@ def send_weekly_progress_report():
                    f"Now: {latest['date']} → {latest['weight']} kg\n\n{change_msg}\n\n"
                    f"Journey: *{entries[0]['weight']} kg → {latest['weight']} kg*\n\nSend *19* to log!\nSend *0* for Menu 💪")
         else:
-            msg = "📈 *Weekly Report!*\n\nHappy Sunday! 🌟\n\nSend *19* to log your weight and start tracking! 💪"
+            msg = "📈 *Weekly Report!*\n\nHappy Sunday! 🌟\n\nSend *19* to log your weight! 💪"
         send_message(phone, msg)
         weekly_report_sent[phone] = today_str
 
@@ -244,11 +292,16 @@ def send_daily_reminders():
                 continue
             if day_of_week == 6:
                 msg = "🌟 Rest Day today — recover and stay hydrated! 💧\n\nSend 0 for Main Menu"
+                send_message(phone, msg)
             else:
+                workout_name = WORKOUT_SCHEDULE[day_of_week]
                 msg = (f"🔔 *GymBot Reminder!*\n\nTime for your workout!\n\n"
-                       f"Today: *{WORKOUT_SCHEDULE[day_of_week]}*\n\n"
-                       f"Send *1* for workout plan!\nLet's crush it! 💪🔥")
-            send_message(phone, msg)
+                       f"Today: *{workout_name}*\n\nSend *1* for workout plan!\nLet's crush it! 💪🔥")
+                img_key = str(day_of_week + 1) if day_of_week < 6 else "6"
+                if img_key in WORKOUT_IMAGES:
+                    send_image(phone, WORKOUT_IMAGES[img_key], msg)
+                else:
+                    send_message(phone, msg)
             reminder_sent_today[phone] = today
 
 def send_morning_motivation():
@@ -257,11 +310,12 @@ def send_morning_motivation():
     if now.hour != 8:
         return
     quote = ask_ai("Give me one powerful gym motivational quote. Under 3 lines. No menu text.")
+    img_url = random.choice(MOTIVATION_IMAGES)
     msg = f"🌅 *Good Morning!*\n\n{quote}\n\n💪 Let's crush today!\nSend *0* for Main Menu"
     for phone in get_all_users():
         if motivation_sent_today.get(phone) == today:
             continue
-        send_message(phone, msg)
+        send_image(phone, img_url, msg)
         motivation_sent_today[phone] = today
 
 # ─── ADMIN PANEL ──────────────────────────────────────────────
@@ -273,18 +327,15 @@ def admin_panel():
         return '''
         <html><head><title>GymBot Admin</title>
         <style>
-        body { font-family: Arial, sans-serif; background: #1a1a2e; color: white;
-               display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
-        .box { background: #16213e; padding: 40px; border-radius: 12px; text-align: center; }
-        input { padding: 12px; border-radius: 8px; border: none; margin: 10px 0; width: 250px;
-                font-size: 16px; text-align: center; }
-        button { background: #0f3460; color: white; padding: 12px 30px; border: none;
-                 border-radius: 8px; cursor: pointer; font-size: 16px; margin-top: 10px; }
-        button:hover { background: #e94560; }
+        body{font-family:Arial,sans-serif;background:#1a1a2e;color:white;
+             display:flex;justify-content:center;align-items:center;height:100vh;margin:0}
+        .box{background:#16213e;padding:40px;border-radius:12px;text-align:center}
+        input{padding:12px;border-radius:8px;border:none;margin:10px 0;width:250px;font-size:16px;text-align:center}
+        button{background:#0f3460;color:white;padding:12px 30px;border:none;border-radius:8px;cursor:pointer;font-size:16px;margin-top:10px}
+        button:hover{background:#00d4aa}
         </style></head>
         <body><div class="box">
-        <h2>🏋️ GymBot Admin</h2>
-        <p>Enter admin password</p>
+        <h2>🏋️ GymBot Admin</h2><p>Enter admin password</p>
         <form method="get">
         <input type="password" name="key" placeholder="Password"><br>
         <button type="submit">Login</button>
@@ -305,10 +356,11 @@ def admin_panel():
     users = c.fetchall()
     conn.close()
 
+    all_reminders = get_all_reminders()
     users_html = ""
     for u in users:
         phone_hidden = u[0][:4] + "****" + u[0][-3:]
-        has_rem = "🔔 Yes" if u[0] in get_all_reminders() else "❌ No"
+        has_rem = "🔔 Yes" if u[0] in all_reminders else "❌ No"
         prog = get_progress_entries(u[0])
         weight_info = f"{prog[-1]['weight']} kg" if prog else "—"
         users_html += f"""
@@ -327,65 +379,41 @@ def admin_panel():
         <title>GymBot Admin Panel</title>
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <style>
-            * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-            body {{ font-family: Arial, sans-serif; background: #0f0f1a; color: #e0e0e0; padding: 20px; }}
-            h1 {{ color: #00d4aa; margin-bottom: 20px; font-size: 28px; }}
-            h2 {{ color: #00d4aa; margin: 30px 0 15px; font-size: 20px; }}
-            .stats {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; margin-bottom: 30px; }}
-            .card {{ background: #1a1a2e; border-radius: 12px; padding: 20px; text-align: center; border: 1px solid #00d4aa33; }}
-            .card .number {{ font-size: 42px; font-weight: bold; color: #00d4aa; }}
-            .card .label {{ font-size: 13px; color: #888; margin-top: 5px; }}
-            table {{ width: 100%; border-collapse: collapse; background: #1a1a2e; border-radius: 12px; overflow: hidden; }}
-            th {{ background: #00d4aa22; color: #00d4aa; padding: 12px 15px; text-align: left; font-size: 13px; }}
-            td {{ padding: 12px 15px; border-bottom: 1px solid #ffffff11; font-size: 13px; }}
-            tr:hover td {{ background: #ffffff08; }}
-            .badge {{ background: #00d4aa22; color: #00d4aa; padding: 3px 8px; border-radius: 20px; font-size: 12px; }}
-            .refresh {{ background: #00d4aa; color: #0f0f1a; padding: 8px 20px; border-radius: 8px;
-                        text-decoration: none; font-weight: bold; display: inline-block; margin-bottom: 20px; }}
-            .refresh:hover {{ background: #00b894; }}
-            .footer {{ text-align: center; color: #444; margin-top: 30px; font-size: 12px; }}
+            *{{box-sizing:border-box;margin:0;padding:0}}
+            body{{font-family:Arial,sans-serif;background:#0f0f1a;color:#e0e0e0;padding:20px}}
+            h1{{color:#00d4aa;margin-bottom:20px;font-size:28px}}
+            h2{{color:#00d4aa;margin:30px 0 15px;font-size:20px}}
+            .stats{{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:15px;margin-bottom:30px}}
+            .card{{background:#1a1a2e;border-radius:12px;padding:20px;text-align:center;border:1px solid #00d4aa33}}
+            .card .number{{font-size:42px;font-weight:bold;color:#00d4aa}}
+            .card .label{{font-size:13px;color:#888;margin-top:5px}}
+            table{{width:100%;border-collapse:collapse;background:#1a1a2e;border-radius:12px;overflow:hidden}}
+            th{{background:#00d4aa22;color:#00d4aa;padding:12px 15px;text-align:left;font-size:13px}}
+            td{{padding:12px 15px;border-bottom:1px solid #ffffff11;font-size:13px}}
+            tr:hover td{{background:#ffffff08}}
+            .refresh{{background:#00d4aa;color:#0f0f1a;padding:8px 20px;border-radius:8px;
+                      text-decoration:none;font-weight:bold;display:inline-block;margin-bottom:20px}}
+            .refresh:hover{{background:#00b894}}
+            .footer{{text-align:center;color:#444;margin-top:30px;font-size:12px}}
         </style>
     </head>
     <body>
         <h1>🏋️ GymBot Admin Panel</h1>
         <a class="refresh" href="/admin?key={password}">🔄 Refresh</a>
-
         <div class="stats">
-            <div class="card">
-                <div class="number">{total_users}</div>
-                <div class="label">Total Users 👥</div>
-            </div>
-            <div class="card">
-                <div class="number">{total_messages}</div>
-                <div class="label">Total Messages 💬</div>
-            </div>
-            <div class="card">
-                <div class="number">{total_reminders}</div>
-                <div class="label">Active Reminders 🔔</div>
-            </div>
-            <div class="card">
-                <div class="number">{tracking_users}</div>
-                <div class="label">Tracking Weight 📊</div>
-            </div>
+            <div class="card"><div class="number">{total_users}</div><div class="label">Total Users 👥</div></div>
+            <div class="card"><div class="number">{total_messages}</div><div class="label">Total Messages 💬</div></div>
+            <div class="card"><div class="number">{total_reminders}</div><div class="label">Active Reminders 🔔</div></div>
+            <div class="card"><div class="number">{tracking_users}</div><div class="label">Tracking Weight 📊</div></div>
         </div>
-
         <h2>👥 All Users</h2>
         <table>
-            <thead>
-                <tr>
-                    <th>Phone</th>
-                    <th>First Seen</th>
-                    <th>Last Active</th>
-                    <th>Messages</th>
-                    <th>Reminder</th>
-                    <th>Last Weight</th>
-                </tr>
-            </thead>
-            <tbody>
-                {users_html}
-            </tbody>
+            <thead><tr>
+                <th>Phone</th><th>First Seen</th><th>Last Active</th>
+                <th>Messages</th><th>Reminder</th><th>Last Weight</th>
+            </tr></thead>
+            <tbody>{users_html}</tbody>
         </table>
-
         <div class="footer">GymBot Admin Panel • {datetime.now(IST).strftime("%d %b %Y %H:%M")} IST</div>
     </body>
     </html>
@@ -437,7 +465,7 @@ def get_weekly_schedule():
     return "Weekly Gym Schedule\n\nMonday - Chest and Triceps\nTuesday - Back and Biceps\nWednesday - Legs and Glutes\nThursday - Shoulders and Arms\nFriday - Core and Abs\nSaturday - Cardio / Full Body\nSunday - Rest and Recovery\n\nConsistency beats Intensity!"
 
 def get_supplement_guide():
-    return "Supplement Guide 💊\n\nBeginner Essentials:\n- Whey Protein: 1-2 scoops post workout\n- Creatine: 5g daily\n- Multivitamin: 1 daily\n\nIntermediate:\n- Pre-workout: 30 min before gym\n- BCAA: During workout\n- Fish Oil: 1g daily\n\nAdvanced:\n- Casein Protein: Before bed\n- Glutamine: Post workout\n\n⚠️ Food first, supplements second!\nSend 0 for Main Menu"
+    return "Supplement Guide 💊\n\nBeginner:\n- Whey Protein: 1-2 scoops post workout\n- Creatine: 5g daily\n- Multivitamin: 1 daily\n\nIntermediate:\n- Pre-workout: 30 min before gym\n- BCAA: During workout\n- Fish Oil: 1g daily\n\nAdvanced:\n- Casein Protein: Before bed\n- Glutamine: Post workout\n\n⚠️ Food first, supplements second!\nSend 0 for Main Menu"
 
 def get_30_day_challenge():
     return "30 Day Fitness Challenge 🔥\n\nWeek 1: 20 push-ups, 30 squats, 1 min plank daily\nWeek 2: 30 push-ups, 40 squats, 2 min plank daily\nWeek 3: 40 push-ups, 50 squats, 3 min plank daily\nWeek 4: 50 push-ups, 60 squats, 4 min plank daily\n\nConsistency is key! 💪\nSend 0 for Main Menu"
@@ -492,7 +520,10 @@ def handle_message(phone, message):
         elif msg == "7":
             send_message(phone, get_supplement_guide())
         elif msg == "8":
-            send_message(phone, ask_ai("Give me a powerful motivational quote for gym and fitness"))
+            quote = ask_ai("Give me a powerful motivational quote for gym and fitness. No menu text at end.")
+            img_url = random.choice(MOTIVATION_IMAGES)
+            send_image(phone, img_url, "💪 Daily Motivation!")
+            send_message(phone, quote)
         elif msg == "9":
             send_message(phone, get_30_day_challenge())
         elif msg == "10":
@@ -531,16 +562,22 @@ def handle_message(phone, message):
     elif state == "workout":
         workout = get_workout(msg)
         if workout:
-            send_message(phone, workout)
-            send_message(phone, "Reply 0 for Main Menu")
+            if msg in WORKOUT_IMAGES:
+                send_image(phone, WORKOUT_IMAGES[msg], workout)
+            else:
+                send_message(phone, workout)
+            send_message(phone, "Reply 0 for Main Menu 💪")
         else:
             send_message(phone, get_workout_menu())
 
     elif state == "diet":
         diet = get_diet(msg)
         if diet:
-            send_message(phone, diet)
-            send_message(phone, "Reply 0 for Main Menu")
+            if msg in DIET_IMAGES:
+                send_image(phone, DIET_IMAGES[msg], diet)
+            else:
+                send_message(phone, diet)
+            send_message(phone, "Reply 0 for Main Menu 💪")
         else:
             send_message(phone, get_diet_menu())
 
