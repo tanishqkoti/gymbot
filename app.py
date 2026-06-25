@@ -69,8 +69,21 @@ def init_db():
         phone TEXT PRIMARY KEY,
         first_seen TEXT,
         last_active TEXT,
-        message_count INTEGER DEFAULT 0
+        message_count INTEGER DEFAULT 0,
+        name TEXT DEFAULT NULL,
+        goal TEXT DEFAULT NULL,
+        level TEXT DEFAULT NULL
     )''')
+    # Add columns if they don't exist (for existing DBs)
+    try:
+        c.execute("ALTER TABLE users ADD COLUMN name TEXT DEFAULT NULL")
+    except: pass
+    try:
+        c.execute("ALTER TABLE users ADD COLUMN goal TEXT DEFAULT NULL")
+    except: pass
+    try:
+        c.execute("ALTER TABLE users ADD COLUMN level TEXT DEFAULT NULL")
+    except: pass
     c.execute('''CREATE TABLE IF NOT EXISTS reminders (
         phone TEXT PRIMARY KEY,
         hour INTEGER,
@@ -99,6 +112,38 @@ def upsert_user(phone):
         c.execute("INSERT INTO users (phone, first_seen, last_active, message_count) VALUES (?,?,?,1)", (phone, now, now))
     conn.commit()
     conn.close()
+
+def get_user_profile(phone):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT name, goal, level FROM users WHERE phone=?", (phone,))
+    row = c.fetchone()
+    conn.close()
+    if row:
+        return {"name": row[0], "goal": row[1], "level": row[2]}
+    return {"name": None, "goal": None, "level": None}
+
+def update_user_profile(phone, name=None, goal=None, level=None):
+    conn = get_conn()
+    c = conn.cursor()
+    if name is not None:
+        c.execute("UPDATE users SET name=? WHERE phone=?", (name, phone))
+    if goal is not None:
+        c.execute("UPDATE users SET goal=? WHERE phone=?", (goal, phone))
+    if level is not None:
+        c.execute("UPDATE users SET level=? WHERE phone=?", (level, phone))
+    conn.commit()
+    conn.close()
+
+def is_new_user(phone):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("SELECT name FROM users WHERE phone=?", (phone,))
+    row = c.fetchone()
+    conn.close()
+    if row and row[0] is None:
+        return True
+    return False
 
 def get_all_users():
     conn = get_conn()
@@ -168,13 +213,19 @@ def keep_alive():
 
 # ─── AI FUNCTIONS ─────────────────────────────────────────────
 
-def ask_ai(question):
+def ask_ai(question, profile=None):
     try:
+        system_prompt = "You are GymBot, a professional fitness coach. Only answer fitness, gym, workout, diet, nutrition, weight loss, muscle gain questions. Keep answers short and practical under 200 words. If asked something unrelated to fitness, say you only help with fitness topics. Always end with a motivational line."
+        if profile and profile.get("name"):
+            name = profile.get("name", "")
+            goal = profile.get("goal", "general fitness")
+            level = profile.get("level", "beginner")
+            system_prompt += f"\n\nUser profile: Name={name}, Goal={goal}, Level={level}. Personalize your response based on their goal and level. Address them by name."
         headers = {"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"}
         data = {
             "model": "llama-3.3-70b-versatile",
             "messages": [
-                {"role": "system", "content": "You are GymBot, a professional fitness coach. Only answer fitness, gym, workout, diet, nutrition, weight loss, muscle gain questions. Keep answers short and practical under 200 words. If asked something unrelated to fitness, say you only help with fitness topics. Always end with a motivational line."},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": question}
             ]
         }
@@ -236,7 +287,10 @@ def get_progress_message(phone, new_weight):
     today = now.strftime("%d %b %Y")
     save_progress_entry(phone, today, new_weight)
     entries = get_progress_entries(phone)
-    msg = f"📊 *Progress Saved!*\n\nDate: {today}\nWeight: {new_weight} kg\n\n"
+    profile = get_user_profile(phone)
+    name = profile.get("name") or ""
+    name_str = f" {name}" if name else ""
+    msg = f"📊 *Progress Saved{name_str}!*\n\nDate: {today}\nWeight: {new_weight} kg\n\n"
     if len(entries) == 1:
         msg += "This is your first entry! Keep logging every week! 💪"
     else:
@@ -265,17 +319,19 @@ def send_weekly_progress_report():
     for phone in get_all_users():
         if weekly_report_sent.get(phone) == today_str:
             continue
+        profile = get_user_profile(phone)
+        name = profile.get("name") or "Champion"
         entries = get_progress_entries(phone)
         if len(entries) >= 2:
             latest, previous = entries[-1], entries[-2]
             diff = round(latest["weight"] - previous["weight"], 1)
             change_msg = f"🎉 Lost *{abs(diff)} kg*!" if diff < 0 else (f"📈 Gained *{diff} kg*!" if diff > 0 else "⚖️ Maintained!")
-            msg = (f"📈 *Weekly Progress Report!*\n\nHappy Sunday! 🌟\n\n"
+            msg = (f"📈 *Weekly Progress Report!*\n\nHappy Sunday {name}! 🌟\n\n"
                    f"Last: {previous['date']} → {previous['weight']} kg\n"
                    f"Now: {latest['date']} → {latest['weight']} kg\n\n{change_msg}\n\n"
                    f"Journey: *{entries[0]['weight']} kg → {latest['weight']} kg*\n\nSend *19* to log!\nSend *0* for Menu 💪")
         else:
-            msg = "📈 *Weekly Report!*\n\nHappy Sunday! 🌟\n\nSend *19* to log your weight! 💪"
+            msg = f"📈 *Weekly Report!*\n\nHappy Sunday {name}! 🌟\n\nSend *19* to log your weight! 💪"
         send_message(phone, msg)
         weekly_report_sent[phone] = today_str
 
@@ -287,12 +343,15 @@ def send_daily_reminders():
         if reminder["hour"] == now.hour and now.minute < 5:
             if reminder_sent_today.get(phone) == today:
                 continue
+            profile = get_user_profile(phone)
+            name = profile.get("name") or ""
+            name_str = f" {name}" if name else ""
             if day_of_week == 6:
-                msg = "🌟 Rest Day today — recover and stay hydrated! 💧\n\nSend 0 for Main Menu"
+                msg = f"🌟 Rest Day today{name_str} — recover and stay hydrated! 💧\n\nSend 0 for Main Menu"
                 send_message(phone, msg)
             else:
                 workout_name = WORKOUT_SCHEDULE[day_of_week]
-                msg = (f"🔔 *GymBot Reminder!*\n\nTime for your workout!\n\n"
+                msg = (f"🔔 *GymBot Reminder!*\n\nHey{name_str}, time for your workout!\n\n"
                        f"Today: *{workout_name}*\n\nSend *1* for workout plan!\nLet's crush it! 💪🔥")
                 img_key = str(day_of_week + 1) if day_of_week < 6 else "6"
                 if img_key in WORKOUT_IMAGES:
@@ -308,10 +367,13 @@ def send_morning_motivation():
         return
     quote = ask_ai("Give me one powerful gym motivational quote. Under 3 lines. No menu text.")
     img_url = random.choice(MOTIVATION_IMAGES)
-    msg = f"🌅 *Good Morning!*\n\n{quote}\n\n💪 Let's crush today!\nSend *0* for Main Menu"
     for phone in get_all_users():
         if motivation_sent_today.get(phone) == today:
             continue
+        profile = get_user_profile(phone)
+        name = profile.get("name") or ""
+        name_str = f" {name}" if name else ""
+        msg = f"🌅 *Good Morning{name_str}!*\n\n{quote}\n\n💪 Let's crush today!\nSend *0* for Main Menu"
         send_image(phone, img_url, msg)
         motivation_sent_today[phone] = today
 
@@ -322,11 +384,9 @@ def broadcast():
     password = request.form.get('key', '')
     if password != ADMIN_PASSWORD:
         return jsonify({"error": "Unauthorized"}), 401
-
     message = request.form.get('message', '').strip()
     if not message:
         return jsonify({"error": "Message is empty"}), 400
-
     users = get_all_users()
     sent = 0
     failed = 0
@@ -336,7 +396,6 @@ def broadcast():
             sent += 1
         except:
             failed += 1
-
     return jsonify({"success": True, "sent": sent, "failed": failed})
 
 # ─── ADMIN PANEL ──────────────────────────────────────────────
@@ -373,7 +432,7 @@ def admin_panel():
     total_messages = c.fetchone()[0] or 0
     c.execute("SELECT COUNT(DISTINCT phone) FROM progress")
     tracking_users = c.fetchone()[0]
-    c.execute("SELECT phone, first_seen, last_active, message_count FROM users ORDER BY message_count DESC")
+    c.execute("SELECT phone, first_seen, last_active, message_count, name, goal, level FROM users ORDER BY message_count DESC")
     users = c.fetchall()
     conn.close()
 
@@ -384,10 +443,15 @@ def admin_panel():
         has_rem = "🔔 Yes" if u[0] in all_reminders else "❌ No"
         prog = get_progress_entries(u[0])
         weight_info = f"{prog[-1]['weight']} kg" if prog else "—"
+        name = u[4] or "—"
+        goal = u[5] or "—"
+        level = u[6] or "—"
         users_html += f"""
         <tr>
             <td>{phone_hidden}</td>
-            <td>{u[1]}</td>
+            <td><b>{name}</b></td>
+            <td>{goal}</td>
+            <td>{level}</td>
             <td>{u[2]}</td>
             <td><b>{u[3]}</b></td>
             <td>{has_rem}</td>
@@ -425,6 +489,13 @@ def admin_panel():
             .result{{margin-top:10px;padding:10px;border-radius:8px;font-size:14px;display:none}}
             .result.success{{background:#00d4aa22;color:#00d4aa;border:1px solid #00d4aa44}}
             .result.error{{background:#ff444422;color:#ff6666;border:1px solid #ff444444}}
+            .badge{{padding:3px 8px;border-radius:20px;font-size:11px;font-weight:bold}}
+            .badge-lose{{background:#ff444422;color:#ff8888}}
+            .badge-gain{{background:#00d4aa22;color:#00d4aa}}
+            .badge-fit{{background:#ffaa0022;color:#ffaa00}}
+            .badge-beg{{background:#8888ff22;color:#aaaaff}}
+            .badge-int{{background:#ffaa0022;color:#ffaa00}}
+            .badge-adv{{background:#00d4aa22;color:#00d4aa}}
             .footer{{text-align:center;color:#444;margin-top:30px;font-size:12px}}
         </style>
     </head>
@@ -442,8 +513,7 @@ def admin_panel():
         <h2>📢 Broadcast Message</h2>
         <div class="broadcast-box">
             <p style="color:#888;font-size:13px;margin-bottom:5px">Send a message to ALL {total_users} users at once</p>
-            <textarea id="broadcastMsg" placeholder="Type your message here...
-Example: 🎉 New feature added! Send 20 to check it out!"></textarea>
+            <textarea id="broadcastMsg" placeholder="Type your message here..."></textarea>
             <br>
             <button class="send-btn" onclick="sendBroadcast()">📢 Send to All Users</button>
             <div class="result" id="broadcastResult"></div>
@@ -452,8 +522,8 @@ Example: 🎉 New feature added! Send 20 to check it out!"></textarea>
         <h2>👥 All Users</h2>
         <table>
             <thead><tr>
-                <th>Phone</th><th>First Seen</th><th>Last Active</th>
-                <th>Messages</th><th>Reminder</th><th>Last Weight</th>
+                <th>Phone</th><th>Name</th><th>Goal</th><th>Level</th>
+                <th>Last Active</th><th>Messages</th><th>Reminder</th><th>Last Weight</th>
             </tr></thead>
             <tbody>{users_html}</tbody>
         </table>
@@ -507,15 +577,17 @@ Example: 🎉 New feature added! Send 20 to check it out!"></textarea>
 
 # ─── MENUS & CONTENT ──────────────────────────────────────────
 
-def get_main_menu():
+def get_main_menu(name=None):
+    greeting = f"Welcome back *{name}*! 💪" if name else "Welcome to GymBot! 🏋️"
     return (
-        "Welcome to GymBot! 🏋️\n\nI am your personal AI fitness assistant.\n\nReply with a number:\n\n"
+        f"{greeting}\n\nI am your personal AI fitness assistant.\n\nReply with a number:\n\n"
         "1 - Workout Plans\n2 - Diet and Nutrition\n3 - BMI Calculator\n4 - Weekly Schedule\n"
         "5 - Membership Info\n6 - Exercise Tips\n7 - Supplement Guide\n8 - Motivational Quote\n"
         "9 - 30 Day Challenge\n10 - Calorie Calculator\n11 - Water Intake Calculator\n"
         "12 - Body Fat Calculator\n13 - Cardio Guide\n14 - Recovery and Sleep Tips\n"
         "15 - Ask AI (Any Fitness Question)\n16 - Set Workout Reminder 🔔\n"
         "17 - Cancel Reminder ❌\n18 - Calorie Counter 🍽️\n19 - Progress Tracker 📊\n"
+        "20 - My Profile 👤\n"
         "0 - Main Menu (anytime)\n\nOr just TYPE any fitness question!"
     )
 
@@ -569,10 +641,18 @@ def handle_message(phone, message):
     msg = message.strip()
     msg_lower = msg.lower()
     session = user_sessions.get(phone, {"state": "main"})
+    profile = get_user_profile(phone)
+
+    # New user onboarding
+    if profile.get("name") is None and session.get("state") not in ["onboard_name", "onboard_goal", "onboard_level"]:
+        user_sessions[phone] = {"state": "onboard_name"}
+        send_message(phone, "👋 Welcome to *GymBot*! 🏋️\n\nI'm your personal AI fitness coach!\n\nFirst, what's your name?")
+        return
 
     if msg == "0":
         user_sessions[phone] = {"state": "main"}
-        send_message(phone, get_main_menu())
+        profile = get_user_profile(phone)
+        send_message(phone, get_main_menu(profile.get("name")))
         return
 
     if "stop reminder" in msg_lower or "cancel reminder" in msg_lower or msg == "17":
@@ -587,6 +667,37 @@ def handle_message(phone, message):
 
     state = session.get("state", "main")
 
+    # ── ONBOARDING ──
+    if state == "onboard_name":
+        name = msg.strip().title()
+        update_user_profile(phone, name=name)
+        user_sessions[phone] = {"state": "onboard_goal"}
+        send_message(phone, f"Nice to meet you *{name}*! 💪\n\nWhat is your fitness goal?\n\n1 - Lose Weight 🔥\n2 - Gain Muscle 💪\n3 - Stay Fit & Healthy 🌟")
+        return
+
+    if state == "onboard_goal":
+        goals = {"1": "Lose Weight", "2": "Gain Muscle", "3": "Stay Fit & Healthy"}
+        if msg in goals:
+            update_user_profile(phone, goal=goals[msg])
+            user_sessions[phone] = {"state": "onboard_level"}
+            send_message(phone, f"Great goal! 🎯\n\nWhat is your fitness level?\n\n1 - Beginner 🌱\n2 - Intermediate ⚡\n3 - Advanced 🏆")
+        else:
+            send_message(phone, "Please choose:\n\n1 - Lose Weight 🔥\n2 - Gain Muscle 💪\n3 - Stay Fit & Healthy 🌟")
+        return
+
+    if state == "onboard_level":
+        levels = {"1": "Beginner", "2": "Intermediate", "3": "Advanced"}
+        if msg in levels:
+            update_user_profile(phone, level=levels[msg])
+            profile = get_user_profile(phone)
+            user_sessions[phone] = {"state": "main"}
+            send_message(phone, f"🎉 *Profile Created!*\n\nName: {profile['name']}\nGoal: {profile['goal']}\nLevel: {profile['level']}\n\nI'll personalize everything just for you! 💪")
+            send_message(phone, get_main_menu(profile.get("name")))
+        else:
+            send_message(phone, "Please choose:\n\n1 - Beginner 🌱\n2 - Intermediate ⚡\n3 - Advanced 🏆")
+        return
+
+    # ── MAIN MENU ──
     if state == "main":
         if msg == "1":
             user_sessions[phone] = {"state": "workout"}
@@ -602,11 +713,11 @@ def handle_message(phone, message):
         elif msg == "5":
             send_message(phone, "Membership Info\n\nBasic Plan: Rs 800/month\nStandard Plan: Rs 1200/month\nPremium Plan: Rs 2000/month\n\nContact us to join!\nSend 0 for Main Menu")
         elif msg == "6":
-            send_message(phone, ask_ai("Give me 5 important exercise tips for beginners"))
+            send_message(phone, ask_ai("Give me 5 important exercise tips for beginners", profile))
         elif msg == "7":
             send_message(phone, get_supplement_guide())
         elif msg == "8":
-            quote = ask_ai("Give me a powerful motivational quote for gym and fitness. No menu text at end.")
+            quote = ask_ai("Give me a powerful motivational quote for gym and fitness. No menu text at end.", profile)
             img_url = random.choice(MOTIVATION_IMAGES)
             send_image(phone, img_url, "💪 Daily Motivation!")
             send_message(phone, quote)
@@ -633,7 +744,7 @@ def handle_message(phone, message):
             send_message(phone, "🔔 Set Workout Reminder\n\nEnter hour in 24hr format (IST)\nExamples:\n- 6 = 6:00 AM\n- 7 = 7:00 AM\n- 18 = 6:00 PM")
         elif msg == "18":
             user_sessions[phone] = {"state": "calorie_counter"}
-            send_message(phone, "🍽️ *Calorie Counter*\n\nType any food or meal!\n\nExamples:\n- 2 eggs and oats\n- rice 1 cup and chicken\n\nSend 0 to go back to Main Menu")
+            send_message(phone, "🍽️ *Calorie Counter*\n\nType any food or meal!\n\nSend 0 to go back to Main Menu")
         elif msg == "19":
             user_sessions[phone] = {"state": "progress_weight"}
             entries = get_progress_entries(phone)
@@ -642,8 +753,19 @@ def handle_message(phone, message):
                 send_message(phone, f"📊 *Progress Tracker*\n\nLast logged: {last['date']} → {last['weight']} kg\n\nEnter current weight in kg:\n\nSend 0 to cancel")
             else:
                 send_message(phone, "📊 *Progress Tracker*\n\nTrack your weight journey here!\n\nEnter your current weight in kg:\n\nSend 0 to cancel")
+        elif msg == "20":
+            p = get_user_profile(phone)
+            name = p.get("name") or "Not set"
+            goal = p.get("goal") or "Not set"
+            level = p.get("level") or "Not set"
+            entries = get_progress_entries(phone)
+            weight = f"{entries[-1]['weight']} kg" if entries else "Not logged"
+            send_message(phone, f"👤 *Your Profile*\n\nName: {name}\nGoal: {goal}\nLevel: {level}\nLast Weight: {weight}\n\nSend *21* to update profile\nSend *0* for Main Menu")
+        elif msg == "21":
+            user_sessions[phone] = {"state": "onboard_name"}
+            send_message(phone, "Let's update your profile!\n\nWhat's your name?")
         else:
-            send_message(phone, ask_ai(msg))
+            send_message(phone, ask_ai(msg, profile))
 
     elif state == "workout":
         workout = get_workout(msg)
@@ -798,7 +920,7 @@ def handle_message(phone, message):
             send_message(phone, "Please enter a valid age (e.g. 25):")
 
     elif state == "ask_ai":
-        send_message(phone, ask_ai(msg))
+        send_message(phone, ask_ai(msg, profile))
 
     elif state == "calorie_counter":
         send_message(phone, ask_ai_calories(msg))
