@@ -74,7 +74,6 @@ def init_db():
         goal TEXT DEFAULT NULL,
         level TEXT DEFAULT NULL
     )''')
-    # Add columns if they don't exist (for existing DBs)
     try:
         c.execute("ALTER TABLE users ADD COLUMN name TEXT DEFAULT NULL")
     except: pass
@@ -489,13 +488,6 @@ def admin_panel():
             .result{{margin-top:10px;padding:10px;border-radius:8px;font-size:14px;display:none}}
             .result.success{{background:#00d4aa22;color:#00d4aa;border:1px solid #00d4aa44}}
             .result.error{{background:#ff444422;color:#ff6666;border:1px solid #ff444444}}
-            .badge{{padding:3px 8px;border-radius:20px;font-size:11px;font-weight:bold}}
-            .badge-lose{{background:#ff444422;color:#ff8888}}
-            .badge-gain{{background:#00d4aa22;color:#00d4aa}}
-            .badge-fit{{background:#ffaa0022;color:#ffaa00}}
-            .badge-beg{{background:#8888ff22;color:#aaaaff}}
-            .badge-int{{background:#ffaa0022;color:#ffaa00}}
-            .badge-adv{{background:#00d4aa22;color:#00d4aa}}
             .footer{{text-align:center;color:#444;margin-top:30px;font-size:12px}}
         </style>
     </head>
@@ -592,47 +584,47 @@ def get_main_menu(name=None):
     )
 
 def get_workout_menu():
-    return "Workout Plans\n\nChoose your target:\n\n1 - Chest and Triceps\n2 - Back and Biceps\n3 - Legs and Glutes\n4 - Shoulders and Arms\n5 - Core and Abs\n6 - Full Body\n0 - Back to Main Menu"
+    return "Workout Plans 💪\n\nChoose your target:\n\n1 - Chest and Triceps\n2 - Back and Biceps\n3 - Legs and Glutes\n4 - Shoulders and Arms\n5 - Core and Abs\n6 - Full Body\n0 - Back to Main Menu"
 
 def get_diet_menu():
-    return "Diet and Nutrition\n\nChoose a topic:\n\n1 - Weight Loss Diet\n2 - Muscle Gain Diet\n3 - Pre-Workout Meals\n4 - Post-Workout Meals\n5 - Protein Rich Foods\n6 - Hydration Tips\n0 - Back to Main Menu"
+    return "Diet and Nutrition 🥗\n\nChoose a topic:\n\n1 - Weight Loss Diet\n2 - Muscle Gain Diet\n3 - Pre-Workout Meals\n4 - Post-Workout Meals\n5 - Protein Rich Foods\n6 - Hydration Tips\n0 - Back to Main Menu"
 
 def get_workout(choice):
     workouts = {
-        "1": "Chest and Triceps Workout\n\n- Bench Press: 4x10\n- Incline Dumbbell Press: 3x12\n- Cable Fly: 3x15\n- Tricep Pushdown: 3x12\n- Overhead Tricep Extension: 3x12\n\nDuration: 45-50 mins",
-        "2": "Back and Biceps Workout\n\n- Pull-ups: 4x8\n- Bent Over Row: 4x10\n- Lat Pulldown: 3x12\n- Seated Cable Row: 3x12\n- Barbell Curl: 3x12\n- Hammer Curls: 3x12\n\nDuration: 45-50 mins",
-        "3": "Legs and Glutes Workout\n\n- Barbell Squat: 4x10\n- Romanian Deadlift: 4x10\n- Leg Press: 3x15\n- Walking Lunges: 3x12\n- Leg Curl: 3x12\n- Calf Raises: 4x20\n\nDuration: 50-60 mins",
-        "4": "Shoulders and Arms Workout\n\n- Overhead Press: 4x10\n- Lateral Raises: 3x15\n- Front Raises: 3x12\n- Barbell Curl: 3x12\n- Skull Crushers: 3x12\n\nDuration: 45 mins",
-        "5": "Core and Abs Workout\n\n- Plank: 3x60sec\n- Crunches: 3x20\n- Leg Raises: 3x15\n- Russian Twists: 3x20\n- Mountain Climbers: 3x30sec\n\nDuration: 30 mins",
-        "6": "Full Body Workout\n\n- Squats: 3x12\n- Push-ups: 3x15\n- Dumbbell Row: 3x12\n- Shoulder Press: 3x12\n- Plank: 3x45sec\n\nDuration: 45 mins"
+        "1": "Chest and Triceps Workout 💪\n\n- Bench Press: 4x10\n- Incline Dumbbell Press: 3x12\n- Cable Fly: 3x15\n- Tricep Pushdown: 3x12\n- Overhead Tricep Extension: 3x12\n\nDuration: 45-50 mins\n\n▶️ Watch Tutorial:\nhttps://www.youtube.com/results?search_query=chest+and+triceps+workout",
+        "2": "Back and Biceps Workout 🏋️\n\n- Pull-ups: 4x8\n- Bent Over Row: 4x10\n- Lat Pulldown: 3x12\n- Seated Cable Row: 3x12\n- Barbell Curl: 3x12\n- Hammer Curls: 3x12\n\nDuration: 45-50 mins\n\n▶️ Watch Tutorial:\nhttps://www.youtube.com/results?search_query=back+and+biceps+workout",
+        "3": "Legs and Glutes Workout 🦵\n\n- Barbell Squat: 4x10\n- Romanian Deadlift: 4x10\n- Leg Press: 3x15\n- Walking Lunges: 3x12\n- Leg Curl: 3x12\n- Calf Raises: 4x20\n\nDuration: 50-60 mins\n\n▶️ Watch Tutorial:\nhttps://www.youtube.com/results?search_query=legs+and+glutes+workout",
+        "4": "Shoulders and Arms Workout 🏆\n\n- Overhead Press: 4x10\n- Lateral Raises: 3x15\n- Front Raises: 3x12\n- Barbell Curl: 3x12\n- Skull Crushers: 3x12\n\nDuration: 45 mins\n\n▶️ Watch Tutorial:\nhttps://www.youtube.com/results?search_query=shoulders+and+arms+workout",
+        "5": "Core and Abs Workout 🔥\n\n- Plank: 3x60sec\n- Crunches: 3x20\n- Leg Raises: 3x15\n- Russian Twists: 3x20\n- Mountain Climbers: 3x30sec\n\nDuration: 30 mins\n\n▶️ Watch Tutorial:\nhttps://www.youtube.com/results?search_query=core+and+abs+workout",
+        "6": "Full Body Workout 💪\n\n- Squats: 3x12\n- Push-ups: 3x15\n- Dumbbell Row: 3x12\n- Shoulder Press: 3x12\n- Plank: 3x45sec\n\nDuration: 45 mins\n\n▶️ Watch Tutorial:\nhttps://www.youtube.com/results?search_query=full+body+gym+workout"
     }
     return workouts.get(choice, None)
 
 def get_diet(choice):
     diets = {
-        "1": "Weight Loss Diet\n\nBreakfast: Oats + banana + black coffee\nLunch: 2 chapati + dal + salad\nSnack: Apple or nuts\nDinner: Grilled paneer/fish + salad\n\nTarget: 1500-1800 kcal\nDrink 3-4 litres water daily",
-        "2": "Muscle Gain Diet\n\nBreakfast: 4 eggs + oats + banana + milk\nLunch: Rice + chicken + dal + veggies\nSnack: Peanut butter sandwich + shake\nDinner: Paneer curry + chapati\n\nTarget: 2500-3000 kcal\nDrink 4-5 litres water daily",
-        "3": "Pre-Workout Meals\n\nEat 60-90 mins before:\n- Banana + peanut butter toast\n- Oats with honey\n- Brown rice + chicken\n- Dates + black coffee",
-        "4": "Post-Workout Meals\n\nEat within 30-45 mins after:\n- Whey protein + banana\n- Eggs + brown bread\n- Chicken rice bowl\n- Paneer + chapati",
-        "5": "Protein Rich Foods\n\nEggs: 6g each\nChicken breast: 31g/100g\nPaneer: 18g/100g\nDal: 9g/100g\nPeanuts: 25g/100g\n\nTarget: 1.6-2.2g per kg bodyweight",
-        "6": "Hydration Tips\n\nDaily: 3-4 litres\nTraining day: 4-5 litres\n\n- 500ml after waking up\n- 250ml every 30 min during workout\n- 500ml after workout"
+        "1": "Weight Loss Diet 🔥\n\nBreakfast: Oats + banana + black coffee\nLunch: 2 chapati + dal + salad\nSnack: Apple or nuts\nDinner: Grilled paneer/fish + salad\n\nTarget: 1500-1800 kcal\nDrink 3-4 litres water daily\n\n▶️ Watch Guide:\nhttps://www.youtube.com/results?search_query=weight+loss+diet+plan",
+        "2": "Muscle Gain Diet 💪\n\nBreakfast: 4 eggs + oats + banana + milk\nLunch: Rice + chicken + dal + veggies\nSnack: Peanut butter sandwich + shake\nDinner: Paneer curry + chapati\n\nTarget: 2500-3000 kcal\nDrink 4-5 litres water daily\n\n▶️ Watch Guide:\nhttps://www.youtube.com/results?search_query=muscle+gain+diet+plan",
+        "3": "Pre-Workout Meals ⚡\n\nEat 60-90 mins before:\n- Banana + peanut butter toast\n- Oats with honey\n- Brown rice + chicken\n- Dates + black coffee\n\n▶️ Watch Guide:\nhttps://www.youtube.com/results?search_query=best+pre+workout+meals",
+        "4": "Post-Workout Meals 🥗\n\nEat within 30-45 mins after:\n- Whey protein + banana\n- Eggs + brown bread\n- Chicken rice bowl\n- Paneer + chapati\n\n▶️ Watch Guide:\nhttps://www.youtube.com/results?search_query=best+post+workout+meals",
+        "5": "Protein Rich Foods 🥩\n\nEggs: 6g each\nChicken breast: 31g/100g\nPaneer: 18g/100g\nDal: 9g/100g\nPeanuts: 25g/100g\n\nTarget: 1.6-2.2g per kg bodyweight\n\n▶️ Watch Guide:\nhttps://www.youtube.com/results?search_query=high+protein+foods+for+muscle",
+        "6": "Hydration Tips 💧\n\nDaily: 3-4 litres\nTraining day: 4-5 litres\n\n- 500ml after waking up\n- 250ml every 30 min during workout\n- 500ml after workout\n\n▶️ Watch Guide:\nhttps://www.youtube.com/results?search_query=hydration+tips+for+gym"
     }
     return diets.get(choice, None)
 
 def get_weekly_schedule():
-    return "Weekly Gym Schedule\n\nMonday - Chest and Triceps\nTuesday - Back and Biceps\nWednesday - Legs and Glutes\nThursday - Shoulders and Arms\nFriday - Core and Abs\nSaturday - Cardio / Full Body\nSunday - Rest and Recovery\n\nConsistency beats Intensity!"
+    return "Weekly Gym Schedule 📅\n\nMonday - Chest and Triceps\nTuesday - Back and Biceps\nWednesday - Legs and Glutes\nThursday - Shoulders and Arms\nFriday - Core and Abs\nSaturday - Cardio / Full Body\nSunday - Rest and Recovery\n\nConsistency beats Intensity!\n\n▶️ Watch Full Week Plan:\nhttps://www.youtube.com/results?search_query=weekly+gym+workout+plan+beginners"
 
 def get_supplement_guide():
-    return "Supplement Guide 💊\n\nBeginner:\n- Whey Protein: 1-2 scoops post workout\n- Creatine: 5g daily\n- Multivitamin: 1 daily\n\nIntermediate:\n- Pre-workout: 30 min before gym\n- BCAA: During workout\n- Fish Oil: 1g daily\n\nAdvanced:\n- Casein Protein: Before bed\n- Glutamine: Post workout\n\n⚠️ Food first, supplements second!\nSend 0 for Main Menu"
+    return "Supplement Guide 💊\n\nBeginner:\n- Whey Protein: 1-2 scoops post workout\n- Creatine: 5g daily\n- Multivitamin: 1 daily\n\nIntermediate:\n- Pre-workout: 30 min before gym\n- BCAA: During workout\n- Fish Oil: 1g daily\n\nAdvanced:\n- Casein Protein: Before bed\n- Glutamine: Post workout\n\n⚠️ Food first, supplements second!\n\n▶️ Watch Guide:\nhttps://www.youtube.com/results?search_query=gym+supplements+guide+beginners\n\nSend 0 for Main Menu"
 
 def get_30_day_challenge():
-    return "30 Day Fitness Challenge 🔥\n\nWeek 1: 20 push-ups, 30 squats, 1 min plank daily\nWeek 2: 30 push-ups, 40 squats, 2 min plank daily\nWeek 3: 40 push-ups, 50 squats, 3 min plank daily\nWeek 4: 50 push-ups, 60 squats, 4 min plank daily\n\nConsistency is key! 💪\nSend 0 for Main Menu"
+    return "30 Day Fitness Challenge 🔥\n\nWeek 1: 20 push-ups, 30 squats, 1 min plank daily\nWeek 2: 30 push-ups, 40 squats, 2 min plank daily\nWeek 3: 40 push-ups, 50 squats, 3 min plank daily\nWeek 4: 50 push-ups, 60 squats, 4 min plank daily\n\nConsistency is key! 💪\n\n▶️ Watch Challenge:\nhttps://www.youtube.com/results?search_query=30+day+fitness+challenge+workout\n\nSend 0 for Main Menu"
 
 def get_cardio_guide():
-    return "Cardio Guide 🏃\n\nWeight Loss: 30-45 min, 5 days/week, 60-70% max HR\nEndurance: 45-60 min long runs, 3-4 days/week\nHIIT: 20s sprint + 40s rest, 10-15 rounds, 20 mins\n\nBest: Running, Cycling, Swimming, Jump rope\n\nDo cardio AFTER weights!\nSend 0 for Main Menu"
+    return "Cardio Guide 🏃\n\nWeight Loss: 30-45 min, 5 days/week, 60-70% max HR\nEndurance: 45-60 min long runs, 3-4 days/week\nHIIT: 20s sprint + 40s rest, 10-15 rounds, 20 mins\n\nBest: Running, Cycling, Swimming, Jump rope\n\nDo cardio AFTER weights!\n\n▶️ Watch Guide:\nhttps://www.youtube.com/results?search_query=cardio+workout+for+weight+loss\n\nSend 0 for Main Menu"
 
 def get_recovery_tips():
-    return "Recovery and Sleep Tips 😴\n\nSleep: 7-9 hours, same time daily\nStretch 10 min after workout\nFoam roll sore muscles\nDrink 3-4 litres water\nEat protein within 30 min post workout\nAvoid alcohol\n\nMuscles grow during REST!\nSend 0 for Main Menu"
+    return "Recovery and Sleep Tips 😴\n\nSleep: 7-9 hours, same time daily\nStretch 10 min after workout\nFoam roll sore muscles\nDrink 3-4 litres water\nEat protein within 30 min post workout\nAvoid alcohol\n\nMuscles grow during REST!\n\n▶️ Watch Guide:\nhttps://www.youtube.com/results?search_query=gym+recovery+tips+muscle+growth\n\nSend 0 for Main Menu"
 
 # ─── MESSAGE HANDLER ──────────────────────────────────────────
 
@@ -643,7 +635,6 @@ def handle_message(phone, message):
     session = user_sessions.get(phone, {"state": "main"})
     profile = get_user_profile(phone)
 
-    # New user onboarding
     if profile.get("name") is None and session.get("state") not in ["onboard_name", "onboard_goal", "onboard_level"]:
         user_sessions[phone] = {"state": "onboard_name"}
         send_message(phone, "👋 Welcome to *GymBot*! 🏋️\n\nI'm your personal AI fitness coach!\n\nFirst, what's your name?")
@@ -667,7 +658,6 @@ def handle_message(phone, message):
 
     state = session.get("state", "main")
 
-    # ── ONBOARDING ──
     if state == "onboard_name":
         name = msg.strip().title()
         update_user_profile(phone, name=name)
@@ -697,7 +687,6 @@ def handle_message(phone, message):
             send_message(phone, "Please choose:\n\n1 - Beginner 🌱\n2 - Intermediate ⚡\n3 - Advanced 🏆")
         return
 
-    # ── MAIN MENU ──
     if state == "main":
         if msg == "1":
             user_sessions[phone] = {"state": "workout"}
