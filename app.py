@@ -223,10 +223,7 @@ def send_image(phone, image_url, caption=""):
             "messaging_product": "whatsapp",
             "to": phone,
             "type": "image",
-            "image": {
-                "link": image_url,
-                "caption": caption
-            }
+            "image": {"link": image_url, "caption": caption}
         }
         requests.post(url, headers=headers, json=data)
     except Exception as e:
@@ -318,6 +315,30 @@ def send_morning_motivation():
         send_image(phone, img_url, msg)
         motivation_sent_today[phone] = today
 
+# ─── BROADCAST ────────────────────────────────────────────────
+
+@app.route('/broadcast', methods=['POST'])
+def broadcast():
+    password = request.form.get('key', '')
+    if password != ADMIN_PASSWORD:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    message = request.form.get('message', '').strip()
+    if not message:
+        return jsonify({"error": "Message is empty"}), 400
+
+    users = get_all_users()
+    sent = 0
+    failed = 0
+    for phone in users:
+        try:
+            send_message(phone, message)
+            sent += 1
+        except:
+            failed += 1
+
+    return jsonify({"success": True, "sent": sent, "failed": failed})
+
 # ─── ADMIN PANEL ──────────────────────────────────────────────
 
 @app.route('/admin')
@@ -392,20 +413,42 @@ def admin_panel():
             td{{padding:12px 15px;border-bottom:1px solid #ffffff11;font-size:13px}}
             tr:hover td{{background:#ffffff08}}
             .refresh{{background:#00d4aa;color:#0f0f1a;padding:8px 20px;border-radius:8px;
-                      text-decoration:none;font-weight:bold;display:inline-block;margin-bottom:20px}}
+                      text-decoration:none;font-weight:bold;display:inline-block;margin-bottom:20px;margin-right:10px}}
             .refresh:hover{{background:#00b894}}
+            .broadcast-box{{background:#1a1a2e;border-radius:12px;padding:25px;margin-bottom:30px;border:1px solid #00d4aa33}}
+            .broadcast-box textarea{{width:100%;background:#0f0f1a;color:#e0e0e0;border:1px solid #00d4aa44;
+                                     border-radius:8px;padding:12px;font-size:14px;resize:vertical;min-height:100px;margin:10px 0}}
+            .broadcast-box textarea:focus{{outline:none;border-color:#00d4aa}}
+            .send-btn{{background:#00d4aa;color:#0f0f1a;padding:10px 25px;border:none;border-radius:8px;
+                      cursor:pointer;font-size:15px;font-weight:bold}}
+            .send-btn:hover{{background:#00b894}}
+            .result{{margin-top:10px;padding:10px;border-radius:8px;font-size:14px;display:none}}
+            .result.success{{background:#00d4aa22;color:#00d4aa;border:1px solid #00d4aa44}}
+            .result.error{{background:#ff444422;color:#ff6666;border:1px solid #ff444444}}
             .footer{{text-align:center;color:#444;margin-top:30px;font-size:12px}}
         </style>
     </head>
     <body>
         <h1>🏋️ GymBot Admin Panel</h1>
         <a class="refresh" href="/admin?key={password}">🔄 Refresh</a>
+
         <div class="stats">
             <div class="card"><div class="number">{total_users}</div><div class="label">Total Users 👥</div></div>
             <div class="card"><div class="number">{total_messages}</div><div class="label">Total Messages 💬</div></div>
             <div class="card"><div class="number">{total_reminders}</div><div class="label">Active Reminders 🔔</div></div>
             <div class="card"><div class="number">{tracking_users}</div><div class="label">Tracking Weight 📊</div></div>
         </div>
+
+        <h2>📢 Broadcast Message</h2>
+        <div class="broadcast-box">
+            <p style="color:#888;font-size:13px;margin-bottom:5px">Send a message to ALL {total_users} users at once</p>
+            <textarea id="broadcastMsg" placeholder="Type your message here...
+Example: 🎉 New feature added! Send 20 to check it out!"></textarea>
+            <br>
+            <button class="send-btn" onclick="sendBroadcast()">📢 Send to All Users</button>
+            <div class="result" id="broadcastResult"></div>
+        </div>
+
         <h2>👥 All Users</h2>
         <table>
             <thead><tr>
@@ -414,7 +457,50 @@ def admin_panel():
             </tr></thead>
             <tbody>{users_html}</tbody>
         </table>
+
         <div class="footer">GymBot Admin Panel • {datetime.now(IST).strftime("%d %b %Y %H:%M")} IST</div>
+
+        <script>
+        function sendBroadcast() {{
+            const msg = document.getElementById('broadcastMsg').value.trim();
+            const resultDiv = document.getElementById('broadcastResult');
+            if (!msg) {{
+                resultDiv.className = 'result error';
+                resultDiv.style.display = 'block';
+                resultDiv.textContent = '❌ Please type a message first!';
+                return;
+            }}
+            const btn = document.querySelector('.send-btn');
+            btn.textContent = '⏳ Sending...';
+            btn.disabled = true;
+            const formData = new FormData();
+            formData.append('key', '{password}');
+            formData.append('message', msg);
+            fetch('/broadcast', {{method: 'POST', body: formData}})
+                .then(r => r.json())
+                .then(data => {{
+                    btn.textContent = '📢 Send to All Users';
+                    btn.disabled = false;
+                    if (data.success) {{
+                        resultDiv.className = 'result success';
+                        resultDiv.style.display = 'block';
+                        resultDiv.textContent = '✅ Sent to ' + data.sent + ' users successfully!';
+                        document.getElementById('broadcastMsg').value = '';
+                    }} else {{
+                        resultDiv.className = 'result error';
+                        resultDiv.style.display = 'block';
+                        resultDiv.textContent = '❌ Error: ' + (data.error || 'Something went wrong');
+                    }}
+                }})
+                .catch(e => {{
+                    btn.textContent = '📢 Send to All Users';
+                    btn.disabled = false;
+                    resultDiv.className = 'result error';
+                    resultDiv.style.display = 'block';
+                    resultDiv.textContent = '❌ Network error. Try again!';
+                }});
+        }}
+        </script>
     </body>
     </html>
     '''
